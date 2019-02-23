@@ -6,6 +6,8 @@
 ################################################################################
 
 import numpy as np
+import healpy as hp
+import matplotlib.pyplot as plt
 
 ################################################################################
 #
@@ -211,4 +213,20 @@ def get_fisher_eigenvectors(params, pta, T_chain=1, epsilon=1e-5):
         eig = (np.sqrt(np.abs(W))*v).T
     
     return eig
+
+################################################################################
+#
+#MAKE AN ARRAY CONTAINING GLOBAL PROPOSAL DENSITY FROM F_E-STATISTICS
+#
+################################################################################
+def make_fe_global_proposal(fe_func, f_min=1e-9, f_max=1e-7, n_freq=400, NSIDE=8):
+    m = np.zeros((n_freq, hp.nside2npix(NSIDE)))
+    freqs = np.logspace(np.log10(f_min), np.log10(f_max), n_freq)
+    idx = np.arange(hp.nside2npix(NSIDE))
+
+    for i, f in enumerate(freqs):
+        m[i,:] = fe_func(f, hp.pix2ang(NSIDE, idx)[0], hp.pix2ang(NSIDE, idx)[1])
+
+    return m
+
 
