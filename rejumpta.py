@@ -225,6 +225,7 @@ def make_fe_global_proposal(fe_func, f_min=1e-9, f_max=1e-7, n_freq=400, NSIDE=8
     #idx = np.arange(hp.nside2npix(NSIDE))
 
     for i, f in enumerate(freqs):
+        print("{0}th freq out of {1}".format(i, n_freq))
         for j in range(hp.nside2npix(NSIDE)):
             m[i,j] = fe_func(f, hp.pix2ang(NSIDE, j)[0], hp.pix2ang(NSIDE, j)[1])
 
