@@ -222,12 +222,11 @@ def get_fisher_eigenvectors(params, pta, T_chain=1, epsilon=1e-5):
 def make_fe_global_proposal(fe_func, f_min=1e-9, f_max=1e-7, n_freq=400, NSIDE=8):
     m = np.zeros((n_freq, hp.nside2npix(NSIDE)))
     freqs = np.logspace(np.log10(f_min), np.log10(f_max), n_freq)
-    #idx = np.arange(hp.nside2npix(NSIDE))
 
+    idx = np.arange(hp.nside2npix(NSIDE))
     for i, f in enumerate(freqs):
         print("{0}th freq out of {1}".format(i, n_freq))
-        for j in range(hp.nside2npix(NSIDE)):
-            m[i,j] = fe_func(f, hp.pix2ang(NSIDE, j)[0], hp.pix2ang(NSIDE, j)[1])
+        m[i,:] = fe_func(f, np.array(hp.pix2ang(NSIDE, idx)))
 
     return m, freqs
 
