@@ -15,7 +15,7 @@ import matplotlib.pyplot as plt
 #
 ################################################################################
 
-def run_ptmcmc(N, T_max, n_chain, pta):
+def run_ptmcmc(N, T_max, n_chain, pta, regular_weight=3, PT_swap_rate=1):
     #getting the number of dimensions
     ndim = len(pta.params)
     
@@ -31,7 +31,7 @@ def run_ptmcmc(N, T_max, n_chain, pta):
  Temperature ladder is:\n".format(n_chain,c),Ts)
 
     #setting up array for the fisher eigenvalues
-    eig = np.zeros((n_chain, ndim, ndim))
+    eig = np.ones((n_chain, ndim, ndim))*0.1
 
     #setting up array for the samples and filling first sample with random draw
     samples = np.zeros((n_chain, N, ndim))
@@ -43,8 +43,9 @@ def run_ptmcmc(N, T_max, n_chain, pta):
     a_no=np.zeros(n_chain+1)
     swap_record=[]
 
-    #probability to try a swap instead of a regular step
-    swap_probability=0.25
+    #set up probabilities of different proposals
+    total_weight = regular_weight + PT_swap_weight
+    swap_probability = PT_swap_weight/total_weight
 
     for i in range(int(N-1)):
         #print out run state every 10 iterations
@@ -58,7 +59,9 @@ def run_ptmcmc(N, T_max, n_chain, pta):
         if i%n_fish_update==0:
             for j in range(n_chain):
                 eigenvectors = get_fisher_eigenvectors(samples[j,i,:], pta, T_chain=Ts[j])
-                if np.all(eigenvectors): #check if eigenvector calculation was succesful
+                #check if eigenvector calculation was succesful
+                #if not, we just keep the initializes eig full of 0.1 values              
+                if np.all(eigenvectors):
                     eig[j,:,:] = eigenvectors
         #try a parallel tempering swap
         if np.random.uniform()<swap_probability:
@@ -197,25 +200,20 @@ def get_fisher_eigenvectors(params, pta, T_chain=1, epsilon=1e-5):
 
     #Invert the Fisher matrix to get the covariance matrix    
     try:
-        cov = np.linalg.inv(fisher)
-    except LinAlgError:
-        eig = np.array(False)
-    else:
-        #Filter nans and replace them with 1s
-        #this will imply that we will set the eigenvalue to 0.1 a few lines below
-        COV = np.where(~np.isnan(cov), cov, 1.0)
-        if not np.array_equal(COV,cov):
-            print("Changed some nan elements in the covariance matrix to 1.0")
+        #cov = np.linalg.inv(fisher)
 
         #Find eigenvalues and eigenvectors of the covariance matrix
-        w, v = np.linalg.eig(COV)
+        w, v = np.linalg.eig(fisher)
 
-        #filter w for eigenvalues bigger than 0.1 and set those to 0.1 -- Neil's trick
+        #filter w for eigenvalues smaller than 100 and set those to 100 -- Neil's trick
         eig_limit = 0.1    
         W = np.where(np.abs(w)<eig_limit, w, eig_limit)
 
-        #create an array containing eigenvectors in its rows
-        eig = (np.sqrt(np.abs(W))*v).T
+        eig = (np.sqrt(1.0/np.abs(W))*v).T
+
+    except LinAlgError:
+        print(LinAlgError)
+        eig = np.array(False)
     
     return eig
 
