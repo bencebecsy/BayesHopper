@@ -18,6 +18,11 @@ import matplotlib.pyplot as plt
 def run_ptmcmc(N, T_max, n_chain, pta):
     #getting the number of dimensions
     ndim = len(pta.params)
+    
+    #fisher updating every n_fish_update step
+    n_fish_update = 200
+    #print out status every n_status_update step
+    n_status_update = 10
 
     #setting up temperature ladder (geometric spacing)
     c = T_max**(1.0/(n_chain-1))
@@ -43,14 +48,14 @@ def run_ptmcmc(N, T_max, n_chain, pta):
 
     for i in range(int(N-1)):
         #print out run state every 10 iterations
-        if i%10==0:
+        if i%n_status_update==0:
             acc_fraction = a_yes/(a_no+a_yes)
             print('Progress: {0:2.2f}% '.format(i/N*100) +
                   'Acceptance fraction (swap, each chain): ({0:1.2f} '.format(acc_fraction[0]) +
                   ' '.join([',{{{}:1.2f}}'.format(i) for i in range(n_chain)]).format(*acc_fraction[1:]) +
                   ')' + '\r',end='')
         #update our eigenvectors from the fisher matrix every 100 iterations
-        if i%100==0:
+        if i%n_fish_update==0:
             for j in range(n_chain):
                 eigenvectors = get_fisher_eigenvectors(samples[j,i,:], pta, T_chain=Ts[j])
                 if np.all(eigenvectors): #check if eigenvector calculation was succesful
