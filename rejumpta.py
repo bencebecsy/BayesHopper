@@ -16,7 +16,8 @@ import matplotlib.pyplot as plt
 ################################################################################
 
 def run_ptmcmc(N, T_max, n_chain, pta, regular_weight=3, PT_swap_weight=1,
-               Fe_proposal_weight=0, draw_from_prior_weight=0, de_weight=0):
+               Fe_proposal_weight=0, fe_file=None, draw_from_prior_weight=0,
+               de_weight=0):
     #getting the number of dimensions
     ndim = len(pta.params)
     
@@ -184,7 +185,48 @@ def do_draw_from_prior_move(n_chain, ndim, pta, samples, i, Ts, a_yes, a_no):
 ################################################################################
 
 def do_fe_global_jump(n_chain, ndim, pta, samples, i, Ts, a_yes, a_no, fe_file):    
-    pass
+    if fe_file==None:
+        raise Exception("Fe-statistics data file is needed for Fe global propsals")
+    npzfile = np.load(fe_file)
+    freqs = npzfile['freqs']
+    fe = npzfile['fe']
+
+    #set limit used for rejection sampling below
+    fe_limit = np.max(fe)
+    #if the max is too high, cap it at Fe=200 (Neil's trick to not to be too restrictive)
+    if fe_limit>200:
+        fe_limit=200
+    
+    for j in range(n_chain):
+        accepted = False
+        while accepted==False:
+            new_point = np.hstack(p.sample() for p in pta.params)
+            f_new = 10**new_point[3]
+            f_idx = (np.abs(freqs - f_new)).argmin()
+
+            gw_theta = np.arccos(new_point[0])
+            gw_phi = new_point[2]
+            hp_idx = hp.ang2pix(hp.get_nside(fe), gw_theta, gw_phi)
+
+            fe_new_point = fe[f_idx, hp_idx]
+            if np.random.uniform()<fe_new_point/fe_limit:
+                accepted = True
+        
+        log_acc_ratio = pta.get_lnlikelihood(new_point[:])
+        log_acc_ratio += pta.get_lnprior(new_point[:])
+        log_acc_ratio += -pta.get_lnlikelihood(samples[j,i,:])
+        log_acc_ratio += -pta.get_lnprior(samples[j,i,:])
+
+        acc_ratio = np.exp(log_acc_ratio)**(1/Ts[j])
+        if np.random.uniform()<=acc_ratio:
+            for k in range(ndim):
+                samples[j,i+1,k] = new_point[k]
+            a_yes[j+1]+=1
+        else:
+            for k in range(ndim):
+                samples[j,i+1,k] = samples[j,i,k]
+            a_no[j+1]+=1
+    
 
 ################################################################################
 #
