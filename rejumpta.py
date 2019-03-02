@@ -206,8 +206,8 @@ def get_fisher_eigenvectors(params, pta, T_chain=1, epsilon=1e-5):
         w, v = np.linalg.eig(fisher)
 
         #filter w for eigenvalues smaller than 100 and set those to 100 -- Neil's trick
-        eig_limit = 0.1    
-        W = np.where(np.abs(w)<eig_limit, w, eig_limit)
+        eig_limit = 100.0    
+        W = np.where(np.abs(w)>eig_limit, w, eig_limit)
 
         eig = (np.sqrt(1.0/np.abs(W))*v).T
 
