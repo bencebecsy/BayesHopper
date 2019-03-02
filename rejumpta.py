@@ -15,7 +15,7 @@ import matplotlib.pyplot as plt
 #
 ################################################################################
 
-def run_ptmcmc(N, T_max, n_chain, pta, regular_weight=3, PT_swap_rate=1):
+def run_ptmcmc(N, T_max, n_chain, pta, regular_weight=3, PT_swap_weight=1):
     #getting the number of dimensions
     ndim = len(pta.params)
     
