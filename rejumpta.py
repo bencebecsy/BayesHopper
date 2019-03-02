@@ -16,7 +16,7 @@ import matplotlib.pyplot as plt
 ################################################################################
 
 def run_ptmcmc(N, T_max, n_chain, pta, regular_weight=3, PT_swap_weight=1,
-               Fe_proposal_weight=0):
+               Fe_proposal_weight=0, draw_from_prior_weight=0):
     #getting the number of dimensions
     ndim = len(pta.params)
     
@@ -45,13 +45,15 @@ def run_ptmcmc(N, T_max, n_chain, pta, regular_weight=3, PT_swap_weight=1,
     swap_record=[]
 
     #set up probabilities of different proposals
-    total_weight = regular_weight + PT_swap_weight + Fe_proposal_weight
+    total_weight = regular_weight + PT_swap_weight + Fe_proposal_weight + draw_from_prior_weight
     swap_probability = PT_swap_weight/total_weight
     fe_proposal_probability = Fe_proposal_weight/total_weight
     regular_probability = regular_weight/total_weight
-    print("Doing PT swaps in {0:.2f}%, Fe-proposals {1:.2f}%, and jumps along Fisher\
-eigendirections {2:.2f}% of the steps".format(swap_probability*100,
-          fe_proposal_probability*100, regular_probability*100))
+    draw_from_prior_probability = draw_from_prior_weight/total_weight
+    print("Percentage of steps doing different jumps:\nPT swaps: {0:.2f}%\n\
+Fe-proposals: {1:.2f}%\nJumps along Fisher eigendirections: {2:.2f}%\n\
+Draw from prior: {3:.2f}%".format(swap_probability*100,
+          fe_proposal_probability*100, regular_probability*100, draw_from_prior_probability*100))
 
     for i in range(int(N-1)):
         #print out run state every 10 iterations
@@ -76,11 +78,41 @@ eigendirections {2:.2f}% of the steps".format(swap_probability*100,
         #global proposal based on Fe-statistic
         elif jump_decide<swap_probability+fe_proposal_probability:
             do_fe_global_jump(n_chain, ndim, pta, samples, i, Ts, a_yes, a_no, fe_file)
-        #try regular step
+        #draw from prior move
+        elif jump_decide<swap_probability+fe_proposal_probability+draw_from_prior_probability:
+            do_draw_from_prior_move(n_chain, ndim, pta, samples, i, Ts, a_yes, a_no)
+        #regular step
         else:
             regular_jump(n_chain, ndim, pta, samples, i, Ts, a_yes, a_no, eig)
     acc_fraction = a_yes/(a_no+a_yes)
     return samples, acc_fraction, swap_record
+
+################################################################################
+#
+#DRAW FROM PRIOR MOVE
+#
+################################################################################
+
+def do_draw_from_prior_move(n_chain, ndim, pta, samples, i, Ts, a_yes, a_no):
+    for j in range(n_chain):
+        #make a rendom draw from the prior
+        new_point = np.hstack(p.sample() for p in pta.params)
+
+        #calculate acceptance ratio
+        log_acc_ratio = pta.get_lnlikelihood(new_point[:])
+        log_acc_ratio += pta.get_lnprior(new_point[:])
+        log_acc_ratio += -pta.get_lnlikelihood(samples[j,i,:])
+        log_acc_ratio += -pta.get_lnprior(samples[j,i,:])
+        
+        acc_ratio = np.exp(log_acc_ratio)**(1/Ts[j])
+        if np.random.uniform()<=acc_ratio:
+            for k in range(ndim):
+                samples[j,i+1,k] = new_point[k]
+            a_yes[j+1]+=1
+        else:
+            for k in range(ndim):
+                samples[j,i+1,k] = samples[j,i,k]
+            a_no[j+1]+=1
 
 ################################################################################
 #
@@ -218,9 +250,9 @@ def get_fisher_eigenvectors(params, pta, T_chain=1, epsilon=1e-5):
     fisher = fisher/T_chain
   
     try:
-        #Filter nans and replace them with 1s
+        #Filter nans and infs and replace them with 1s
         #this will imply that we will set the eigenvalue to 100 a few lines below
-        FISHER = np.where(~np.isnan(fisher), fisher, 1.0)
+        FISHER = np.where(np.isfinite(fisher), fisher, 1.0)
         if not np.array_equal(FISHER, fisher):
             print("Changed some nan elements in the Fisher matrix to 1.0")
 
@@ -233,8 +265,8 @@ def get_fisher_eigenvectors(params, pta, T_chain=1, epsilon=1e-5):
 
         eig = (np.sqrt(1.0/np.abs(W))*v).T
 
-    except LinAlgError:
-        print("A LinAlgError happened")
+    except:
+        print("An Error occured in the eigenvalue calculation")
         eig = np.array(False)
     
     return eig
