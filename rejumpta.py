@@ -16,7 +16,7 @@ import matplotlib.pyplot as plt
 ################################################################################
 
 def run_ptmcmc(N, T_max, n_chain, pta, regular_weight=3, PT_swap_weight=1,
-               Fe_proposal_weight=0, draw_from_prior_weight=0):
+               Fe_proposal_weight=0, draw_from_prior_weight=0, de_weight=0):
     #getting the number of dimensions
     ndim = len(pta.params)
     
@@ -24,6 +24,14 @@ def run_ptmcmc(N, T_max, n_chain, pta, regular_weight=3, PT_swap_weight=1,
     n_fish_update = 200
     #print out status every n_status_update step
     n_status_update = 10
+    #add current sample to de history file every n_de_history step
+    n_de_history = 10
+
+    #array to hold Differential Evolution history
+    history_size = 1000    
+    de_history = np.zeros((n_chain, history_size, ndim))
+    #start DE after de_start_iter iterations
+    de_start_iter = 100
 
     #setting up temperature ladder (geometric spacing)
     c = T_max**(1.0/(n_chain-1))
@@ -45,17 +53,24 @@ def run_ptmcmc(N, T_max, n_chain, pta, regular_weight=3, PT_swap_weight=1,
     swap_record=[]
 
     #set up probabilities of different proposals
-    total_weight = regular_weight + PT_swap_weight + Fe_proposal_weight + draw_from_prior_weight
+    total_weight = (regular_weight + PT_swap_weight + Fe_proposal_weight + 
+                    draw_from_prior_weight + de_weight)
     swap_probability = PT_swap_weight/total_weight
     fe_proposal_probability = Fe_proposal_weight/total_weight
     regular_probability = regular_weight/total_weight
     draw_from_prior_probability = draw_from_prior_weight/total_weight
+    de_probability = de_weight/total_weight
     print("Percentage of steps doing different jumps:\nPT swaps: {0:.2f}%\n\
 Fe-proposals: {1:.2f}%\nJumps along Fisher eigendirections: {2:.2f}%\n\
-Draw from prior: {3:.2f}%".format(swap_probability*100,
-          fe_proposal_probability*100, regular_probability*100, draw_from_prior_probability*100))
+Draw from prior: {3:.2f}%\nDifferential evolution jump: {4:.2f}%".format(swap_probability*100,
+          fe_proposal_probability*100, regular_probability*100, draw_from_prior_probability*100,
+          de_probability*100))
 
     for i in range(int(N-1)):
+        #add current sample to DE history
+        if i%n_de_history==0 and i>=de_start_iter:
+            de_hist_index = int((i-de_start_iter)/n_de_history)%history_size
+            de_history[:,de_hist_index,:] = samples[:,i,:]
         #print out run state every 10 iterations
         if i%n_status_update==0:
             acc_fraction = a_yes/(a_no+a_yes)
@@ -81,11 +96,59 @@ Draw from prior: {3:.2f}%".format(swap_probability*100,
         #draw from prior move
         elif jump_decide<swap_probability+fe_proposal_probability+draw_from_prior_probability:
             do_draw_from_prior_move(n_chain, ndim, pta, samples, i, Ts, a_yes, a_no)
+        #do DE jump
+        elif (jump_decide<swap_probability+fe_proposal_probability+
+             draw_from_prior_probability+de_probability and i>=de_start_iter):
+            do_de_jump(n_chain, ndim, pta, samples, i, Ts, a_yes, a_no, de_history)
         #regular step
         else:
             regular_jump(n_chain, ndim, pta, samples, i, Ts, a_yes, a_no, eig)
     acc_fraction = a_yes/(a_no+a_yes)
     return samples, acc_fraction, swap_record
+
+################################################################################
+#
+#DIFFERENTIAL EVOLUTION PROPOSAL
+#
+################################################################################
+
+def do_de_jump(n_chain, ndim, pta, samples, i, Ts, a_yes, a_no, de_history):
+    de_indices = np.random.choice(de_history.shape[1], size=2, replace=False)
+
+    #setting up our two x arrays and replace them with a random draw if the
+    #have not been filled up yet with history
+    x1 = de_history[:,de_indices[0],:]
+    if np.array_equal(x1, np.zeros((n_chain, ndim))):
+        for j in range(n_chain):
+            x1[j,:] = np.hstack(p.sample() for p in pta.params)
+    
+    x2 = de_history[:,de_indices[1],:]
+    if np.array_equal(x2, np.zeros((n_chain, ndim))):
+        for j in range(n_chain):
+            x2[j,:] = np.hstack(p.sample() for p in pta.params)
+
+    alpha = 1.0
+    if np.random.uniform()<0.9:
+        alpha = np.random.normal(scale=2.38/np.sqrt(2*ndim))
+
+    for j in range(n_chain):
+        new_point = samples[j,i,:] + alpha*(x1[j,:]-x2[j,:])
+        
+        log_acc_ratio = pta.get_lnlikelihood(new_point[:])
+        log_acc_ratio += pta.get_lnprior(new_point[:])
+        log_acc_ratio += -pta.get_lnlikelihood(samples[j,i,:])
+        log_acc_ratio += -pta.get_lnprior(samples[j,i,:])
+
+        acc_ratio = np.exp(log_acc_ratio)**(1/Ts[j])
+        if np.random.uniform()<=acc_ratio:
+            for k in range(ndim):
+                samples[j,i+1,k] = new_point[k]
+            a_yes[j+1]+=1
+        else:
+            for k in range(ndim):
+                samples[j,i+1,k] = samples[j,i,k]
+            a_no[j+1]+=1
+
 
 ################################################################################
 #
@@ -120,7 +183,7 @@ def do_draw_from_prior_move(n_chain, ndim, pta, samples, i, Ts, a_yes, a_no):
 #
 ################################################################################
 
-def do_fe_global_jump(n_chain, ndim, pta, samples, i, Ts, a_yes, a_no, fe_file):
+def do_fe_global_jump(n_chain, ndim, pta, samples, i, Ts, a_yes, a_no, fe_file):    
     pass
 
 ################################################################################
