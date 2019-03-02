@@ -15,7 +15,8 @@ import matplotlib.pyplot as plt
 #
 ################################################################################
 
-def run_ptmcmc(N, T_max, n_chain, pta, regular_weight=3, PT_swap_weight=1):
+def run_ptmcmc(N, T_max, n_chain, pta, regular_weight=3, PT_swap_weight=1,
+               Fe_proposal_weight=0):
     #getting the number of dimensions
     ndim = len(pta.params)
     
@@ -44,8 +45,13 @@ def run_ptmcmc(N, T_max, n_chain, pta, regular_weight=3, PT_swap_weight=1):
     swap_record=[]
 
     #set up probabilities of different proposals
-    total_weight = regular_weight + PT_swap_weight
+    total_weight = regular_weight + PT_swap_weight + Fe_proposal_weight
     swap_probability = PT_swap_weight/total_weight
+    fe_proposal_probability = Fe_proposal_weight/total_weight
+    regular_probability = regular_weight/total_weight
+    print("Doing PT swaps in {0:.2f}%, Fe-proposals {1:.2f}%, and jumps along Fisher\
+eigendirections {2:.2f}% of the steps".format(swap_probability*100,
+          fe_proposal_probability*100, regular_probability*100))
 
     for i in range(int(N-1)):
         #print out run state every 10 iterations
@@ -63,14 +69,27 @@ def run_ptmcmc(N, T_max, n_chain, pta, regular_weight=3, PT_swap_weight=1):
                 #if not, we just keep the initializes eig full of 0.1 values              
                 if np.all(eigenvectors):
                     eig[j,:,:] = eigenvectors
-        #try a parallel tempering swap
-        if np.random.uniform()<swap_probability:
+        #draw a random number to decide which jump to do
+        jump_decide = np.random.uniform()
+        if jump_decide<swap_probability:
             do_pt_swap(n_chain, ndim, pta, samples, i, Ts, a_yes, a_no, swap_record)
+        #global proposal based on Fe-statistic
+        elif jump_decide<swap_probability+fe_proposal_probability:
+            do_fe_global_jump(n_chain, ndim, pta, samples, i, Ts, a_yes, a_no, fe_file)
         #try regular step
         else:
             regular_jump(n_chain, ndim, pta, samples, i, Ts, a_yes, a_no, eig)
     acc_fraction = a_yes/(a_no+a_yes)
     return samples, acc_fraction, swap_record
+
+################################################################################
+#
+#GLOBAL PROPOSAL BASED ON FE-STATISTIC
+#
+################################################################################
+
+def do_fe_global_jump(n_chain, ndim, pta, samples, i, Ts, a_yes, a_no, fe_file):
+    pass
 
 ################################################################################
 #
@@ -197,13 +216,16 @@ def get_fisher_eigenvectors(params, pta, T_chain=1, epsilon=1e-5):
     
     #correct for the given temperature of the chain    
     fisher = fisher/T_chain
-
-    #Invert the Fisher matrix to get the covariance matrix    
+  
     try:
-        #cov = np.linalg.inv(fisher)
+        #Filter nans and replace them with 1s
+        #this will imply that we will set the eigenvalue to 100 a few lines below
+        FISHER = np.where(~np.isnan(fisher), fisher, 1.0)
+        if not np.array_equal(FISHER, fisher):
+            print("Changed some nan elements in the Fisher matrix to 1.0")
 
-        #Find eigenvalues and eigenvectors of the covariance matrix
-        w, v = np.linalg.eig(fisher)
+        #Find eigenvalues and eigenvectors of the Fisher matrix
+        w, v = np.linalg.eig(FISHER)
 
         #filter w for eigenvalues smaller than 100 and set those to 100 -- Neil's trick
         eig_limit = 100.0    
@@ -212,7 +234,7 @@ def get_fisher_eigenvectors(params, pta, T_chain=1, epsilon=1e-5):
         eig = (np.sqrt(1.0/np.abs(W))*v).T
 
     except LinAlgError:
-        print(LinAlgError)
+        print("A LinAlgError happened")
         eig = np.array(False)
     
     return eig
