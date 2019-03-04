@@ -396,15 +396,30 @@ def get_fisher_eigenvectors(params, pta, T_chain=1, epsilon=1e-5):
 #MAKE AN ARRAY CONTAINING GLOBAL PROPOSAL DENSITY FROM F_E-STATISTICS
 #
 ################################################################################
-def make_fe_global_proposal(fe_func, f_min=1e-9, f_max=1e-7, n_freq=400, NSIDE=8):
+def make_fe_global_proposal(fe_func, f_min=1e-9, f_max=1e-7, n_freq=400,
+                            NSIDE=8, maximized_parameters=False):
     m = np.zeros((n_freq, hp.nside2npix(NSIDE)))
+    if maximized_parameters:
+        inc_max = np.zeros((n_freq, hp.nside2npix(NSIDE)))
+        psi_max = np.zeros((n_freq, hp.nside2npix(NSIDE)))
+        phase0_max = np.zeros((n_freq, hp.nside2npix(NSIDE)))
+        h_max = np.zeros((n_freq, hp.nside2npix(NSIDE)))
+
     freqs = np.logspace(np.log10(f_min), np.log10(f_max), n_freq)
 
     idx = np.arange(hp.nside2npix(NSIDE))
     for i, f in enumerate(freqs):
         print("{0}th freq out of {1}".format(i, n_freq))
-        m[i,:] = fe_func(f, np.array(hp.pix2ang(NSIDE, idx)))
-
-    return m, freqs
+        if maximized_parameters:
+            m[i,:], inc_max[i,:], psi_max[i,:], phase0_max[i,:], h_max[i,:] = fe_func(f,
+                                np.array(hp.pix2ang(NSIDE, idx)),
+                                maximized_parameters=maximized_parameters)
+        else:
+            m[i,:] = fe_func(f, np.array(hp.pix2ang(NSIDE, idx)),
+                             maximized_parameters=maximized_parameters)
+    if maximized_parameters:
+        return freqs, m, inc_max, psi_max, phase0_max, h_max
+    else:
+        return freqs, m
 
 
