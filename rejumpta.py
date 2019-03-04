@@ -209,15 +209,30 @@ def do_fe_global_jump(n_chain, ndim, pta, samples, i, Ts, a_yes, a_no, fe_file):
             hp_idx = hp.ang2pix(hp.get_nside(fe), gw_theta, gw_phi)
 
             fe_new_point = fe[f_idx, hp_idx]
-            if np.random.uniform()<fe_new_point/fe_limit:
+            if np.random.uniform()<(fe_new_point/fe_limit):
                 accepted = True
-        
+
+        if fe_new_point>fe_limit:
+            fe_new_point=fe_limit        
+
         log_acc_ratio = pta.get_lnlikelihood(new_point[:])
         log_acc_ratio += pta.get_lnprior(new_point[:])
         log_acc_ratio += -pta.get_lnlikelihood(samples[j,i,:])
         log_acc_ratio += -pta.get_lnprior(samples[j,i,:])
 
-        acc_ratio = np.exp(log_acc_ratio)**(1/Ts[j])
+        #get ratio of proposal density for the Hastings ratio
+        f_old = 10**samples[j,i,3]
+        f_idx = (np.abs(freqs - f_old)).argmin()
+        
+        gw_theta_old = np.arccos(samples[j,i,0])
+        gw_phi_old = samples[j,i,2]
+        hp_idx = hp.ang2pix(hp.get_nside(fe), gw_theta_old, gw_phi_old)
+
+        fe_old_point = fe[f_idx, hp_idx]
+        if fe_old_point>fe_limit:
+            fe_old_point = fe_limit
+
+        acc_ratio = np.exp(log_acc_ratio)**(1/Ts[j])*(fe_old_point/fe_new_point)
         if np.random.uniform()<=acc_ratio:
             for k in range(ndim):
                 samples[j,i+1,k] = new_point[k]
