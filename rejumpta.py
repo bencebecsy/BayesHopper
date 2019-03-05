@@ -190,27 +190,56 @@ def do_fe_global_jump(n_chain, ndim, pta, samples, i, Ts, a_yes, a_no, fe_file):
     npzfile = np.load(fe_file)
     freqs = npzfile['freqs']
     fe = npzfile['fe']
+    inc_max = npzfile['inc_max']
+    psi_max = npzfile['psi_max']
+    phase0_max = npzfile['phase0_max']
+    h_max = npzfile['h_max']
+
+    #set probability of deterministic vs flat proposal in extrinsic parameters
+    p_det = 0.9
+    #set width of deterministic proposal
+    alpha = 0.1
 
     #set limit used for rejection sampling below
     fe_limit = np.max(fe)
     #if the max is too high, cap it at Fe=200 (Neil's trick to not to be too restrictive)
-    if fe_limit>200:
-        fe_limit=200
+    #if fe_limit>200:
+    #    fe_limit=200
     
     for j in range(n_chain):
         accepted = False
         while accepted==False:
-            new_point = np.hstack(p.sample() for p in pta.params)
-            f_new = 10**new_point[3]
+            f_new = 10**(pta.params[3].sample())
             f_idx = (np.abs(freqs - f_new)).argmin()
 
-            gw_theta = np.arccos(new_point[0])
-            gw_phi = new_point[2]
+            gw_theta = np.arccos(pta.params[0].sample())
+            gw_phi = pta.params[2].sample()
             hp_idx = hp.ang2pix(hp.get_nside(fe), gw_theta, gw_phi)
 
             fe_new_point = fe[f_idx, hp_idx]
             if np.random.uniform()<(fe_new_point/fe_limit):
                 accepted = True
+
+        if np.random.uniform()<p_det:
+            deterministic=True
+        else:
+            deterministic=False
+
+        if deterministic:
+            cos_inc = np.cos(inc_max[f_idx, hp_idx]) + 2*alpha*(np.random.uniform()-0.5)
+            psi = psi_max[f_idx, hp_idx] + 2*alpha*(np.random.uniform()-0.5)
+            phase0 = phase0_max[f_idx, hp_idx] + 2*alpha*(np.random.uniform()-0.5)
+            log10_h = np.log10(h_max[f_idx, hp_idx]) + 2*alpha*(np.random.uniform()-0.5)
+        else:
+            cos_inc = pta.params[1].sample()
+            psi = pta.params[6].sample()
+            phase0 = pta.params[5].sample()
+            log10_h = pta.params[4].sample()
+
+        new_point = np.array([np.cos(gw_theta), cos_inc, gw_phi, np.log10(f_new),
+                              log10_h, phase0, psi])
+        #if j==0: print("----------------------------------")
+        #if j==0: print(j, deterministic)
 
         if fe_new_point>fe_limit:
             fe_new_point=fe_limit        
@@ -232,8 +261,34 @@ def do_fe_global_jump(n_chain, ndim, pta, samples, i, Ts, a_yes, a_no, fe_file):
         if fe_old_point>fe_limit:
             fe_old_point = fe_limit
 
-        acc_ratio = np.exp(log_acc_ratio)**(1/Ts[j])*(fe_old_point/fe_new_point)
+        cos_inc_old = np.cos(inc_max[f_idx, hp_idx])
+        psi_old = psi_max[f_idx, hp_idx]
+        phase0_old = phase0_max[f_idx, hp_idx]
+        log10_h_old = np.log10(h_max[f_idx, hp_idx])
+        
+        old_params = [cos_inc_old, log10_h_old, phase0_old, psi_old]
+        prior_ranges = [2.0, 7.0, 2.0*np.pi, np.pi]
+        
+        hastings_extra_factor=1.0
+        for k, prior_range, old_param in zip([1,4,5,6], prior_ranges, old_params):
+            param = samples[j,i,k]
+            det_old = np.abs(param-old_param)<alpha
+            #TODO: the correct way to do this would be to check if the new
+            #parameters are within the deterministic range, because they can fall
+            #there even if we did a draw from prior, i.e. deterministic=False
+            if deterministic and not det_old:
+                #if j==0: print("From non-det to det")
+                hastings_extra_factor *= 1.0/( p_det/(1-p_det)*prior_range/(2*alpha) + 1 )
+            elif not deterministic and det_old:
+                #if j==0: print("From det to non-det")
+                hastings_extra_factor *= p_det/(1-p_det)*prior_range/(2*alpha) + 1
+
+        #if j==0: print(hastings_extra_factor)
+
+        acc_ratio = np.exp(log_acc_ratio)**(1/Ts[j])*(fe_old_point/fe_new_point)*hastings_extra_factor
+        #if j==0: print(acc_ratio)
         if np.random.uniform()<=acc_ratio:
+            if j==0: print('yeeeh')
             for k in range(ndim):
                 samples[j,i+1,k] = new_point[k]
             a_yes[j+1]+=1
@@ -250,6 +305,7 @@ def do_fe_global_jump(n_chain, ndim, pta, samples, i, Ts, a_yes, a_no, fe_file):
 ################################################################################
 
 def regular_jump(n_chain, ndim, pta, samples, i, Ts, a_yes, a_no, eig):
+    #print("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeigen")
     for j in range(n_chain):
         jump_select = np.random.randint(ndim)
         jump = eig[j,jump_select,:]
@@ -263,6 +319,7 @@ def regular_jump(n_chain, ndim, pta, samples, i, Ts, a_yes, a_no, eig):
 
         acc_ratio = np.exp(log_acc_ratio)**(1/Ts[j])
         if np.random.uniform()<=acc_ratio:
+            #if j==0: print("Yupiiiiii")
             for k in range(ndim):
                 samples[j,i+1,k] = new_point[k]
             a_yes[j+1]+=1
