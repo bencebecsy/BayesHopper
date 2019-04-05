@@ -9,20 +9,52 @@ import numpy as np
 import healpy as hp
 import matplotlib.pyplot as plt
 
+import enterprise
+import enterprise.signals.parameter as parameter
+from enterprise.signals import signal_base
+
+import enterprise_cw_funcs_from_git as models
+
 ################################################################################
 #
 #MAIN MCMC ENGINE
 #
 ################################################################################
 
-def run_ptmcmc(N, T_max, n_chain, pta, regular_weight=3, PT_swap_weight=1,
+def run_ptmcmc(N, T_max, n_chain, base_model, pulsars, regular_weight=3, PT_swap_weight=1,
                Fe_proposal_weight=0, fe_file=None, draw_from_prior_weight=0,
                de_weight=0):
+    #setting up the pta object
+    n_source = 2
+    cws = []
+    for i in range(n_source):
+        log10_fgw = parameter.Uniform(np.log10(3.5e-9), -7)('log10_fgw'+str(i))
+        log10_mc = parameter.Constant(np.log10(5e9))('log10_mc'+str(i))
+        cos_gwtheta = parameter.Uniform(-1, 1)('cos_gwtheta'+str(i))
+        gwphi = parameter.Uniform(0, 2*np.pi)('gwphi'+str(i))
+        phase0 = parameter.Uniform(0, 2*np.pi)('phase0'+str(i))
+        psi = parameter.Uniform(0, np.pi)('psi'+str(i))
+        cos_inc = parameter.Uniform(-1, 1)('cos_inc'+str(i))
+        log10_h = parameter.LinearExp(-18, -11)('log10_h'+str(i))
+        cw_wf = models.cw_delay(cos_gwtheta=cos_gwtheta, gwphi=gwphi, log10_mc=log10_mc,
+                     log10_h=log10_h, log10_fgw=log10_fgw, phase0=phase0,
+                     psi=psi, cos_inc=cos_inc, tref=53000*86400)
+        cws.append(models.CWSignal(cw_wf, psrTerm=False, name='cw'+str(i)))
+        
+    s = base_model + cws[0] + cws[1]
+    
+    model = []
+    for p in pulsars:
+        model.append(s(p))
+    pta = signal_base.PTA(model)
+
+    print(pta.params)
+
     #getting the number of dimensions
-    ndim = len(pta.params)
+    #ndim = len(pta.params)
     
     #fisher updating every n_fish_update step
-    n_fish_update = 200
+    n_fish_update = 200 #50
     #print out status every n_status_update step
     n_status_update = 10
     #add current sample to de history file every n_de_history step
@@ -30,7 +62,7 @@ def run_ptmcmc(N, T_max, n_chain, pta, regular_weight=3, PT_swap_weight=1,
 
     #array to hold Differential Evolution history
     history_size = 1000    
-    de_history = np.zeros((n_chain, history_size, ndim))
+    de_history = np.zeros((n_chain, history_size, n_source*7+1))
     #start DE after de_start_iter iterations
     de_start_iter = 100
 
@@ -41,12 +73,14 @@ def run_ptmcmc(N, T_max, n_chain, pta, regular_weight=3, PT_swap_weight=1,
  Temperature ladder is:\n".format(n_chain,c),Ts)
 
     #setting up array for the fisher eigenvalues
-    eig = np.ones((n_chain, ndim, ndim))*0.1
+    eig = np.ones((n_chain, n_source*7, n_source*7))*0.1
 
     #setting up array for the samples and filling first sample with random draw
-    samples = np.zeros((n_chain, N, ndim))
+    samples = np.zeros((n_chain, N, n_source*7+1))
     for j in range(n_chain):
-        samples[j,0,:] = np.hstack(p.sample() for p in pta.params)
+        samples[j,0,0] = n_source
+        samples[j,0,1:] = np.hstack(p.sample() for p in pta.params)
+    print(samples[0,0,:])
 
     #setting up arrays to record acceptance and swaps
     a_yes=np.zeros(n_chain+1)
@@ -82,15 +116,16 @@ Draw from prior: {3:.2f}%\nDifferential evolution jump: {4:.2f}%".format(swap_pr
         #update our eigenvectors from the fisher matrix every 100 iterations
         if i%n_fish_update==0:
             for j in range(n_chain):
-                eigenvectors = get_fisher_eigenvectors(samples[j,i,:], pta, T_chain=Ts[j])
+                eigenvectors = get_fisher_eigenvectors(samples[j,i,1:], pta, T_chain=Ts[j])
                 #check if eigenvector calculation was succesful
                 #if not, we just keep the initializes eig full of 0.1 values              
                 if np.all(eigenvectors):
                     eig[j,:,:] = eigenvectors
         #draw a random number to decide which jump to do
         jump_decide = np.random.uniform()
+        #PT swap move
         if jump_decide<swap_probability:
-            do_pt_swap(n_chain, ndim, pta, samples, i, Ts, a_yes, a_no, swap_record)
+            do_pt_swap(n_chain, n_source, pta, samples, i, Ts, a_yes, a_no, swap_record)
         #global proposal based on Fe-statistic
         elif jump_decide<swap_probability+fe_proposal_probability:
             do_fe_global_jump(n_chain, ndim, pta, samples, i, Ts, a_yes, a_no, fe_file)
@@ -103,7 +138,7 @@ Draw from prior: {3:.2f}%\nDifferential evolution jump: {4:.2f}%".format(swap_pr
             do_de_jump(n_chain, ndim, pta, samples, i, Ts, a_yes, a_no, de_history)
         #regular step
         else:
-            regular_jump(n_chain, ndim, pta, samples, i, Ts, a_yes, a_no, eig)
+            regular_jump(n_chain, n_source, pta, samples, i, Ts, a_yes, a_no, eig)
     acc_fraction = a_yes/(a_no+a_yes)
     return samples, acc_fraction, swap_record
 
@@ -184,7 +219,7 @@ def do_draw_from_prior_move(n_chain, ndim, pta, samples, i, Ts, a_yes, a_no):
 #
 ################################################################################
 
-def do_fe_global_jump(n_chain, ndim, pta, samples, i, Ts, a_yes, a_no, fe_file):    
+def do_fe_global_jump(n_chain, n_source, pta, samples, i, Ts, a_yes, a_no, fe_file):    
     if fe_file==None:
         raise Exception("Fe-statistics data file is needed for Fe global propsals")
     npzfile = np.load(fe_file)
@@ -196,9 +231,11 @@ def do_fe_global_jump(n_chain, ndim, pta, samples, i, Ts, a_yes, a_no, fe_file):
     h_max = npzfile['h_max']
 
     #set probability of deterministic vs flat proposal in extrinsic parameters
-    p_det = 0.9
+    p_det = 0.5
     #set width of deterministic proposal
-    alpha = 0.1
+    alpha = 0.01
+
+    #print("Global proposal properties: p_det={0}, width={1}".format(p_det,alpha))
 
     #set limit used for rejection sampling below
     fe_limit = np.max(fe)
@@ -231,12 +268,15 @@ def do_fe_global_jump(n_chain, ndim, pta, samples, i, Ts, a_yes, a_no, fe_file):
             phase0 = phase0_max[f_idx, hp_idx] + 2*alpha*(np.random.uniform()-0.5)
             log10_h = np.log10(h_max[f_idx, hp_idx]) + 2*alpha*(np.random.uniform()-0.5)
         else:
-            cos_inc = pta.params[1].sample()
-            psi = pta.params[6].sample()
-            phase0 = pta.params[5].sample()
-            log10_h = pta.params[4].sample()
+            cos_inc = pta.params[1*n_source].sample()
+            psi = pta.params[6*n_source].sample()
+            phase0 = pta.params[5*n_source].sample()
+            log10_h = pta.params[4*n_source].sample()
 
-        new_point = np.array([np.cos(gw_theta), cos_inc, gw_phi, np.log10(f_new),
+        #choose randomly which source to change
+        source_select = np.random.randint(n_source)
+        new_point = samples[j,i,1:]
+        new_point[source_select*7:(source_select+1)*7] = np.array([np.cos(gw_theta), cos_inc, gw_phi, np.log10(f_new),
                               log10_h, phase0, psi])
         #if j==0: print("----------------------------------")
         #if j==0: print(j, deterministic)
@@ -246,15 +286,15 @@ def do_fe_global_jump(n_chain, ndim, pta, samples, i, Ts, a_yes, a_no, fe_file):
 
         log_acc_ratio = pta.get_lnlikelihood(new_point[:])
         log_acc_ratio += pta.get_lnprior(new_point[:])
-        log_acc_ratio += -pta.get_lnlikelihood(samples[j,i,:])
-        log_acc_ratio += -pta.get_lnprior(samples[j,i,:])
+        log_acc_ratio += -pta.get_lnlikelihood(samples[j,i,1:])
+        log_acc_ratio += -pta.get_lnprior(samples[j,i,1:])
 
         #get ratio of proposal density for the Hastings ratio
-        f_old = 10**samples[j,i,3]
+        f_old = 10**samples[j,i,3*n_source+source_select+1]
         f_idx = (np.abs(freqs - f_old)).argmin()
         
-        gw_theta_old = np.arccos(samples[j,i,0])
-        gw_phi_old = samples[j,i,2]
+        gw_theta_old = np.arccos(samples[j,i,source_select+1])
+        gw_phi_old = samples[j,i,2*n_source+source_select+1]
         hp_idx = hp.ang2pix(hp.get_nside(fe), gw_theta_old, gw_phi_old)
 
         fe_old_point = fe[f_idx, hp_idx]
@@ -271,7 +311,7 @@ def do_fe_global_jump(n_chain, ndim, pta, samples, i, Ts, a_yes, a_no, fe_file):
         
         hastings_extra_factor=1.0
         for k, prior_range, old_param in zip([1,4,5,6], prior_ranges, old_params):
-            param = samples[j,i,k]
+            param = samples[j,i,k*n_source+source_select+1]
             det_old = np.abs(param-old_param)<alpha
             #TODO: the correct way to do this would be to check if the new
             #parameters are within the deterministic range, because they can fall
@@ -287,14 +327,15 @@ def do_fe_global_jump(n_chain, ndim, pta, samples, i, Ts, a_yes, a_no, fe_file):
 
         acc_ratio = np.exp(log_acc_ratio)**(1/Ts[j])*(fe_old_point/fe_new_point)*hastings_extra_factor
         #if j==0: print(acc_ratio)
+        samples[j,i+1,0] = n_source
         if np.random.uniform()<=acc_ratio:
-            if j==0: print('yeeeh')
+            #if j==0: print('yeeeh')
             for k in range(ndim):
-                samples[j,i+1,k] = new_point[k]
+                samples[j,i+1,k+1] = new_point[k]
             a_yes[j+1]+=1
         else:
             for k in range(ndim):
-                samples[j,i+1,k] = samples[j,i,k]
+                samples[j,i+1,k+1] = samples[j,i,k+1]
             a_no[j+1]+=1
     
 
@@ -304,28 +345,36 @@ def do_fe_global_jump(n_chain, ndim, pta, samples, i, Ts, a_yes, a_no, fe_file):
 #
 ################################################################################
 
-def regular_jump(n_chain, ndim, pta, samples, i, Ts, a_yes, a_no, eig):
+def regular_jump(n_chain, n_source, pta, samples, i, Ts, a_yes, a_no, eig):
     #print("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeigen")
+    ndim = n_source*7
     for j in range(n_chain):
         jump_select = np.random.randint(ndim)
         jump = eig[j,jump_select,:]
 
-        new_point = samples[j,i,:] + jump*np.random.normal()
+        new_point = samples[j,i,1:] + jump*np.random.normal()
+        #if j==0:        
+        #    print('-'*20)
+        #    print(i)
+        #    print(jump)        
+        #    print(samples[j,i,:])
+        #    print(new_point)
 
         log_acc_ratio = pta.get_lnlikelihood(new_point[:])
         log_acc_ratio += pta.get_lnprior(new_point[:])
-        log_acc_ratio += -pta.get_lnlikelihood(samples[j,i,:])
-        log_acc_ratio += -pta.get_lnprior(samples[j,i,:])
+        log_acc_ratio += -pta.get_lnlikelihood(samples[j,i,1:])
+        log_acc_ratio += -pta.get_lnprior(samples[j,i,1:])
 
         acc_ratio = np.exp(log_acc_ratio)**(1/Ts[j])
+        samples[j,i+1,0] = n_source
         if np.random.uniform()<=acc_ratio:
             #if j==0: print("Yupiiiiii")
             for k in range(ndim):
-                samples[j,i+1,k] = new_point[k]
+                samples[j,i+1,k+1] = new_point[k]
             a_yes[j+1]+=1
         else:
             for k in range(ndim):
-                samples[j,i+1,k] = samples[j,i,k]
+                samples[j,i+1,k+1] = samples[j,i,k+1]
             a_no[j+1]+=1
 
 ################################################################################
@@ -333,36 +382,40 @@ def regular_jump(n_chain, ndim, pta, samples, i, Ts, a_yes, a_no, eig):
 #PARALLEL TEMPERING SWAP JUMP ROUTINE
 #
 ################################################################################
-def do_pt_swap(n_chain, ndim, pta, samples, i, Ts, a_yes, a_no, swap_record):
+def do_pt_swap(n_chain, n_source, pta, samples, i, Ts, a_yes, a_no, swap_record):
+    ndim=n_source*7
+    
     swap_chain = np.random.randint(n_chain-1)
 
-    log_acc_ratio = -pta.get_lnlikelihood(samples[swap_chain,i,:])/Ts[swap_chain]
-    log_acc_ratio += -pta.get_lnprior(samples[swap_chain,i,:])/Ts[swap_chain]
-    log_acc_ratio += -pta.get_lnlikelihood(samples[swap_chain+1,i,:])/Ts[swap_chain+1]
-    log_acc_ratio += -pta.get_lnprior(samples[swap_chain+1,i,:])/Ts[swap_chain+1]
-    log_acc_ratio += pta.get_lnlikelihood(samples[swap_chain+1,i,:])/Ts[swap_chain]
-    log_acc_ratio += pta.get_lnprior(samples[swap_chain+1,i,:])/Ts[swap_chain]
-    log_acc_ratio += pta.get_lnlikelihood(samples[swap_chain,i,:])/Ts[swap_chain+1]
-    log_acc_ratio += pta.get_lnprior(samples[swap_chain,i,:])/Ts[swap_chain+1]
+    log_acc_ratio = -pta.get_lnlikelihood(samples[swap_chain,i,1:])/Ts[swap_chain]
+    log_acc_ratio += -pta.get_lnprior(samples[swap_chain,i,1:])/Ts[swap_chain]
+    log_acc_ratio += -pta.get_lnlikelihood(samples[swap_chain+1,i,1:])/Ts[swap_chain+1]
+    log_acc_ratio += -pta.get_lnprior(samples[swap_chain+1,i,1:])/Ts[swap_chain+1]
+    log_acc_ratio += pta.get_lnlikelihood(samples[swap_chain+1,i,1:])/Ts[swap_chain]
+    log_acc_ratio += pta.get_lnprior(samples[swap_chain+1,i,1:])/Ts[swap_chain]
+    log_acc_ratio += pta.get_lnlikelihood(samples[swap_chain,i,1:])/Ts[swap_chain+1]
+    log_acc_ratio += pta.get_lnprior(samples[swap_chain,i,1:])/Ts[swap_chain+1]
+
+    samples[:,i+1,0] = n_source
 
     acc_ratio = np.exp(log_acc_ratio)
     if np.random.uniform()<=acc_ratio:
         for j in range(n_chain):
             if j==swap_chain:
                 for k in range(ndim):
-                    samples[j,i+1,k] = samples[j+1,i,k]
+                    samples[j,i+1,k+1] = samples[j+1,i,k+1]
             elif j==swap_chain+1:
                 for k in range(ndim):
-                    samples[j,i+1,k] = samples[j-1,i,k]
+                    samples[j,i+1,k+1] = samples[j-1,i,k+1]
             else:
                 for k in range(ndim):
-                    samples[j,i+1,k] = samples[j,i,k]
+                    samples[j,i+1,k+1] = samples[j,i,k+1]
         a_yes[0]+=1
         swap_record.append(swap_chain)
     else:
         for j in range(n_chain):
             for k in range(ndim):
-                samples[j,i+1,k] = samples[j,i,k]
+                samples[j,i+1,k+1] = samples[j,i,k+1]
         a_no[0]+=1
 
 ################################################################################
