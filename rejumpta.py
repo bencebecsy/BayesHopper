@@ -49,16 +49,16 @@ def run_ptmcmc(N, T_max, n_chain, base_model, pulsars, regular_weight=3, PT_swap
         model.append(s(p))
     pta = signal_base.PTA(model)
 
-    print(pta.params)
+    #print(pta.params)
 
     #getting the number of dimensions
     #ndim = len(pta.params)
 
     #do n_global_first global proposal steps before starting any other step
-    n_global_first = 10000
+    n_global_first = 0
     
     #fisher updating every n_fish_update step
-    n_fish_update = 1000 #50
+    n_fish_update = 200 #50
     #print out status every n_status_update step
     n_status_update = 10
     #add current sample to de history file every n_de_history step
@@ -83,10 +83,9 @@ def run_ptmcmc(N, T_max, n_chain, base_model, pulsars, regular_weight=3, PT_swap
     samples = np.zeros((n_chain, N, n_source*7+1))
     for j in range(n_chain):
         samples[j,0,0] = n_source
-        samples[j,0,1:] = np.hstack(p.sample() for p in pta.params)
-        #samples[j,0,1:] = np.array([0.0, -0.5, 0.54, 0.955, 1.0, 4.5,
-        #                            -8.0, -8.3979, -13.39, -14.137, 2.0, 0.5,
-        #                            0.5, 1.5])
+        #samples[j,0,1:] = np.hstack(p.sample() for p in pta.params)
+        samples[j,0,1:] = np.array([0.5, -0.5, 0.5403, 0.8776, 4.5, 3.5, -8.0969, -7.3979, -13.4133, -12.9931, 1.0, 0.5, 1.0, 0.5])
+        #samples[j,0,1:] = np.array([0.0, 0.54, 1.0, -8.0, -13.39, 2.0, 0.5])
     print(samples[0,0,:])
 
     #setting up arrays to record acceptance and swaps
@@ -116,19 +115,26 @@ Draw from prior: {3:.2f}%\nDifferential evolution jump: {4:.2f}%".format(swap_pr
         #print out run state every 10 iterations
         if i%n_status_update==0:
             acc_fraction = a_yes/(a_no+a_yes)
-            print(i)
             print('Progress: {0:2.2f}% '.format(i/N*100) +
                   'Acceptance fraction (swap, each chain): ({0:1.2f} '.format(acc_fraction[0]) +
                   ' '.join([',{{{}:1.2f}}'.format(i) for i in range(n_chain)]).format(*acc_fraction[1:]) +
                   ')' + '\r',end='')
         #update our eigenvectors from the fisher matrix every 100 iterations
         if i%n_fish_update==0 and i>=n_global_first:
-            for j in range(n_chain):
-                eigenvectors = get_fisher_eigenvectors(samples[j,i,1:], pta, T_chain=Ts[j])
+            #only update T>1 chains every 10th time
+            if i%(n_fish_update*10)==0:
+                for j in range(n_chain):
+                    eigenvectors = get_fisher_eigenvectors(samples[j,i,1:], pta, T_chain=Ts[j])
+                    #check if eigenvector calculation was succesful
+                    #if not, we just keep the initializes eig full of 0.1 values              
+                    if np.all(eigenvectors):
+                        eig[j,:,:] = eigenvectors
+            else:
+                eigenvectors = get_fisher_eigenvectors(samples[0,i,1:], pta, T_chain=Ts[0])
                 #check if eigenvector calculation was succesful
                 #if not, we just keep the initializes eig full of 0.1 values              
                 if np.all(eigenvectors):
-                    eig[j,:,:] = eigenvectors
+                    eig[0,:,:] = eigenvectors
         if i<n_global_first:
             do_fe_global_jump(n_chain, n_source, pta, samples, i, Ts, a_yes, a_no, fe_file)
         else:
@@ -144,7 +150,7 @@ Draw from prior: {3:.2f}%\nDifferential evolution jump: {4:.2f}%".format(swap_pr
                 do_fe_global_jump(n_chain, n_source, pta, samples, i, Ts, a_yes, a_no, fe_file)
             #draw from prior move
             elif jump_decide<swap_probability+fe_proposal_probability+draw_from_prior_probability:
-                do_draw_from_prior_move(n_chain, ndim, pta, samples, i, Ts, a_yes, a_no)
+                do_draw_from_prior_move(n_chain, n_source, pta, samples, i, Ts, a_yes, a_no)
             #do DE jump
             elif (jump_decide<swap_probability+fe_proposal_probability+
                  draw_from_prior_probability+de_probability and i>=de_start_iter):
@@ -163,8 +169,11 @@ Draw from prior: {3:.2f}%\nDifferential evolution jump: {4:.2f}%".format(swap_pr
 #
 ################################################################################
 
-def do_de_jump(n_chain, ndim, pta, samples, i, Ts, a_yes, a_no, de_history):
+def do_de_jump(n_chain, n_source, pta, samples, i, Ts, a_yes, a_no, de_history):
     de_indices = np.random.choice(de_history.shape[1], size=2, replace=False)
+
+    #TODO: make it work for changing dimensions!!!
+    ndim = 7*n_source
 
     #setting up our two x arrays and replace them with a random draw if the
     #have not been filled up yet with history
@@ -207,7 +216,8 @@ def do_de_jump(n_chain, ndim, pta, samples, i, Ts, a_yes, a_no, de_history):
 #
 ################################################################################
 
-def do_draw_from_prior_move(n_chain, ndim, pta, samples, i, Ts, a_yes, a_no):
+def do_draw_from_prior_move(n_chain, n_source, pta, samples, i, Ts, a_yes, a_no):
+    ndim = n_source*7
     for j in range(n_chain):
         #make a rendom draw from the prior
         new_point = np.hstack(p.sample() for p in pta.params)
@@ -215,17 +225,18 @@ def do_draw_from_prior_move(n_chain, ndim, pta, samples, i, Ts, a_yes, a_no):
         #calculate acceptance ratio
         log_acc_ratio = pta.get_lnlikelihood(new_point[:])
         log_acc_ratio += pta.get_lnprior(new_point[:])
-        log_acc_ratio += -pta.get_lnlikelihood(samples[j,i,:])
-        log_acc_ratio += -pta.get_lnprior(samples[j,i,:])
+        log_acc_ratio += -pta.get_lnlikelihood(samples[j,i,1:])
+        log_acc_ratio += -pta.get_lnprior(samples[j,i,1:])
         
         acc_ratio = np.exp(log_acc_ratio)**(1/Ts[j])
+        samples[j,i+1,0] = n_source
         if np.random.uniform()<=acc_ratio:
             for k in range(ndim):
-                samples[j,i+1,k] = new_point[k]
+                samples[j,i+1,k+1] = new_point[k]
             a_yes[j+1]+=1
         else:
             for k in range(ndim):
-                samples[j,i+1,k] = samples[j,i,k]
+                samples[j,i+1,k+1] = samples[j,i,k+1]
             a_no[j+1]+=1
 
 ################################################################################
@@ -276,7 +287,7 @@ def do_fe_global_jump(n_chain, n_source, pta, samples, i, Ts, a_yes, a_no, fe_fi
                 fe_new_point = fe[f_idx, hp_idx]
                 if np.random.uniform()<(fe_new_point/fe_limit):
                     accepted = True
-            if j==0: print("f={0} Hz; (theta,phi)=({1},{2})".format(f_new, gw_theta, gw_phi))
+            #if j==0: print("f={0} Hz; (theta,phi)=({1},{2})".format(f_new, gw_theta, gw_phi))
 
             if np.random.uniform()<p_det:
                 deterministic=True
@@ -338,24 +349,24 @@ def do_fe_global_jump(n_chain, n_source, pta, samples, i, Ts, a_yes, a_no, fe_fi
             #parameters are within the deterministic range, because they can fall
             #there even if we did a draw from prior, i.e. deterministic=False
             if deterministic and not det_old:
-                if j==0: print("From non-det to det")
+                #if j==0: print("From non-det to det")
                 hastings_extra_factor *= 1.0/( p_det/(1-p_det)*prior_range/(2*alpha) + 1 )
             elif not deterministic and det_old:
-                if j==0: print("From det to non-det")
+                #if j==0: print("From det to non-det")
                 hastings_extra_factor *= p_det/(1-p_det)*prior_range/(2*alpha) + 1
 
         
-        if j==0:
-            print('-'*30)
-            print(np.exp(log_acc_ratio))
-            print(fe_old_point/fe_new_point)
-            print(hastings_extra_factor)
+        #if j==0:
+        #    print('-'*30)
+        #    print(np.exp(log_acc_ratio))
+        #    print(fe_old_point/fe_new_point)
+        #    print(hastings_extra_factor)
 
         acc_ratio = np.exp(log_acc_ratio)**(1/Ts[j])*(fe_old_point/fe_new_point)*hastings_extra_factor
-        if j==0: print(acc_ratio)
+        #if j==0: print(acc_ratio)
         samples[j,i+1,0] = n_source
         if np.random.uniform()<=acc_ratio:
-            if j==0: print('yeeeh')
+            #if j==0: print('yeeeh')
             for k in range(ndim):
                 samples[j,i+1,k+1] = new_point[k]
             a_yes[j+1]+=1
@@ -394,7 +405,7 @@ def regular_jump(n_chain, n_source, pta, samples, i, Ts, a_yes, a_no, eig):
         acc_ratio = np.exp(log_acc_ratio)**(1/Ts[j])
         samples[j,i+1,0] = n_source
         if np.random.uniform()<=acc_ratio:
-            if j==0: print("Yupiiiiii")
+            #if j==0: print("Yupiiiiii")
             for k in range(ndim):
                 samples[j,i+1,k+1] = new_point[k]
             a_yes[j+1]+=1
@@ -449,10 +460,12 @@ def do_pt_swap(n_chain, n_source, pta, samples, i, Ts, a_yes, a_no, swap_record)
 #FISHER EIGENVALUE CALCULATION
 #
 ################################################################################
-def get_fisher_eigenvectors(params, pta, T_chain=1, epsilon=1e-5):
+def get_fisher_eigenvectors(params, pta, T_chain=1, epsilon=1e-4):
     #get dimension and set up an array for the fisher matrix    
     dim = params.shape[0]
     fisher = np.zeros((dim,dim))
+
+    #print(params)
 
     #lnlikelihood at specified point
     nn = pta.get_lnlikelihood(params)
@@ -464,10 +477,13 @@ def get_fisher_eigenvectors(params, pta, T_chain=1, epsilon=1e-5):
         paramsMM = np.copy(params)
         paramsPP[i] += 2*epsilon
         paramsMM[i] -= 2*epsilon
+        #print(paramsPP)
         
         #lnlikelihood at +-epsilon positions
         pp = pta.get_lnlikelihood(paramsPP)
         mm = pta.get_lnlikelihood(paramsMM)
+
+        #print((pp - 2.0*nn + mm))
         
         #calculate diagonal elements of the Hessian from a central finite element scheme
         #note the minus sign compared to the regular Hessian
@@ -502,6 +518,7 @@ def get_fisher_eigenvectors(params, pta, T_chain=1, epsilon=1e-5):
             fisher[i,j] = -(pp - mp - pm + mm)/(4.0*epsilon*epsilon)
             fisher[j,i] = -(pp - mp - pm + mm)/(4.0*epsilon*epsilon)
     
+    #print(fisher)
     #correct for the given temperature of the chain    
     fisher = fisher/T_chain
   
@@ -518,14 +535,23 @@ def get_fisher_eigenvectors(params, pta, T_chain=1, epsilon=1e-5):
         #filter w for eigenvalues smaller than 100 and set those to 100 -- Neil's trick
         eig_limit = 100.0    
         W = np.where(np.abs(w)>eig_limit, w, eig_limit)
-        
-        if T_chain==1.0: print(W)
+        #print(W)
+        #print(np.sum(v**2, axis=0))
+        #if T_chain==1.0: print(W)
+        #if T_chain==1.0: print(v)
 
         eig = (np.sqrt(1.0/np.abs(W))*v).T
+        #print(np.sum(eig**2, axis=1))
+        #if T_chain==1.0: print(eig)
 
     except:
         print("An Error occured in the eigenvalue calculation")
         eig = np.array(False)
+
+    #import matplotlib.pyplot as plt
+    #plt.figure()
+    #plt.imshow(np.log10(np.abs(np.real(np.array(FISHER)))))
+    #plt.colorbar()
     
     return eig
 
