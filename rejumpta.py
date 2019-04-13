@@ -77,14 +77,14 @@ def run_ptmcmc(N, T_max, n_chain, base_model, pulsars, regular_weight=3, PT_swap
  Temperature ladder is:\n".format(n_chain,c),Ts)
 
     #setting up array for the fisher eigenvalues
-    eig = np.ones((n_chain, n_source*7, n_source*7))*0.1
+    eig = np.ones((n_chain, n_source, 7, 7))*0.1
 
     #setting up array for the samples and filling first sample with random draw
     samples = np.zeros((n_chain, N, n_source*7+1))
     for j in range(n_chain):
         samples[j,0,0] = n_source
         #samples[j,0,1:] = np.hstack(p.sample() for p in pta.params)
-        samples[j,0,1:] = np.array([0.5, -0.5, 0.5403, 0.8776, 4.5, 3.5, -8.0969, -7.3979, -13.4133, -12.9931, 1.0, 0.5, 1.0, 0.5])
+        samples[j,0,1:] = np.array([0.5, -0.5, 0.5403, 0.8776, 4.5, 3.5, -8.0969, -7.3979, -13.4133, -12.8381, 1.0, 0.5, 1.0, 0.5])
         #samples[j,0,1:] = np.array([0.0, 0.54, 1.0, -8.0, -13.39, 2.0, 0.5])
     print(samples[0,0,:])
 
@@ -124,17 +124,17 @@ Draw from prior: {3:.2f}%\nDifferential evolution jump: {4:.2f}%".format(swap_pr
             #only update T>1 chains every 10th time
             if i%(n_fish_update*10)==0:
                 for j in range(n_chain):
-                    eigenvectors = get_fisher_eigenvectors(samples[j,i,1:], pta, T_chain=Ts[j])
+                    eigenvectors = get_fisher_eigenvectors(samples[j,i,1:], pta, T_chain=Ts[j], n_source=n_source)
                     #check if eigenvector calculation was succesful
-                    #if not, we just keep the initializes eig full of 0.1 values              
+                    #if not, we just keep the initializes eig full of 0.1 values
                     if np.all(eigenvectors):
-                        eig[j,:,:] = eigenvectors
+                        eig[j,:,:,:] = eigenvectors
             else:
-                eigenvectors = get_fisher_eigenvectors(samples[0,i,1:], pta, T_chain=Ts[0])
+                eigenvectors = get_fisher_eigenvectors(samples[0,i,1:], pta, T_chain=Ts[0], n_source=n_source)
                 #check if eigenvector calculation was succesful
                 #if not, we just keep the initializes eig full of 0.1 values              
                 if np.all(eigenvectors):
-                    eig[0,:,:] = eigenvectors
+                    eig[0,:,:,:] = eigenvectors
         if i<n_global_first:
             do_fe_global_jump(n_chain, n_source, pta, samples, i, Ts, a_yes, a_no, fe_file)
         else:
@@ -386,13 +386,16 @@ def regular_jump(n_chain, n_source, pta, samples, i, Ts, a_yes, a_no, eig):
     #print("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeigen")
     ndim = n_source*7
     for j in range(n_chain):
-        jump_select = np.random.randint(ndim)
-        jump = eig[j,jump_select,:]
+        source_select = np.random.randint(n_source)
+        jump_select = np.random.randint(int(ndim/n_source))
+        jump_1source = eig[j,source_select,jump_select,:]
+        jump = np.array([jump_1source[int(i/n_source)] if i%n_source==source_select else 0.0 for i in range(ndim)])
 
         new_point = samples[j,i,1:] + jump*np.random.normal()
         #if j==0:        
         #    print('-'*20)
         #    print(i)
+        #    print(source_select)
         #    print(jump)        
         #    print(samples[j,i,:])
         #    print(new_point)
@@ -460,100 +463,104 @@ def do_pt_swap(n_chain, n_source, pta, samples, i, Ts, a_yes, a_no, swap_record)
 #FISHER EIGENVALUE CALCULATION
 #
 ################################################################################
-def get_fisher_eigenvectors(params, pta, T_chain=1, epsilon=1e-4):
+def get_fisher_eigenvectors(params, pta, T_chain=1, epsilon=1e-4, n_source=1):
     #get dimension and set up an array for the fisher matrix    
-    dim = params.shape[0]
-    fisher = np.zeros((dim,dim))
+    dim = int(params.shape[0]/n_source)
+    fisher = np.zeros((n_source,dim,dim))
+    eig = []
 
     #print(params)
 
     #lnlikelihood at specified point
     nn = pta.get_lnlikelihood(params)
     
-    #calculate diagonal elements
-    for i in range(dim):
-        #create parameter vectors with +-epsilon in the ith component
-        paramsPP = np.copy(params)
-        paramsMM = np.copy(params)
-        paramsPP[i] += 2*epsilon
-        paramsMM[i] -= 2*epsilon
-        #print(paramsPP)
-        
-        #lnlikelihood at +-epsilon positions
-        pp = pta.get_lnlikelihood(paramsPP)
-        mm = pta.get_lnlikelihood(paramsMM)
-
-        #print((pp - 2.0*nn + mm))
-        
-        #calculate diagonal elements of the Hessian from a central finite element scheme
-        #note the minus sign compared to the regular Hessian
-        fisher[i,i] = -(pp - 2.0*nn + mm)/(4.0*epsilon*epsilon)
-
-    #calculate off-diagonal elements
-    for i in range(dim):
-        for j in range(i+1,dim):
-            #create parameter vectors with ++, --, +-, -+ epsilon in the ith and jth component
+    
+    for k in range(n_source):
+        #print(k)
+        #calculate diagonal elements
+        for i in range(dim):
+            #create parameter vectors with +-epsilon in the ith component
             paramsPP = np.copy(params)
             paramsMM = np.copy(params)
-            paramsPM = np.copy(params)
-            paramsMP = np.copy(params)
-
-            paramsPP[i] += epsilon
-            paramsPP[j] += epsilon
-            paramsMM[i] -= epsilon
-            paramsMM[j] -= epsilon
-            paramsPM[i] += epsilon
-            paramsPM[j] -= epsilon
-            paramsMP[i] -= epsilon
-            paramsMP[j] += epsilon
-
-            #lnlikelihood at those positions
+            paramsPP[n_source*i+k] += 2*epsilon
+            paramsMM[n_source*i+k] -= 2*epsilon
+            #print(paramsPP)
+            
+            #lnlikelihood at +-epsilon positions
             pp = pta.get_lnlikelihood(paramsPP)
             mm = pta.get_lnlikelihood(paramsMM)
-            pm = pta.get_lnlikelihood(paramsPM)
-            mp = pta.get_lnlikelihood(paramsMP)
 
-            #calculate off-diagonal elements of the Hessian from a central finite element scheme
+            #print((pp - 2.0*nn + mm))
+            
+            #calculate diagonal elements of the Hessian from a central finite element scheme
             #note the minus sign compared to the regular Hessian
-            fisher[i,j] = -(pp - mp - pm + mm)/(4.0*epsilon*epsilon)
-            fisher[j,i] = -(pp - mp - pm + mm)/(4.0*epsilon*epsilon)
+            fisher[k,i,i] = -(pp - 2.0*nn + mm)/(4.0*epsilon*epsilon)
+
+        #calculate off-diagonal elements
+        for i in range(dim):
+            for j in range(i+1,dim):
+                #create parameter vectors with ++, --, +-, -+ epsilon in the ith and jth component
+                paramsPP = np.copy(params)
+                paramsMM = np.copy(params)
+                paramsPM = np.copy(params)
+                paramsMP = np.copy(params)
+
+                paramsPP[n_source*i+k] += epsilon
+                paramsPP[n_source*j+k] += epsilon
+                paramsMM[n_source*i+k] -= epsilon
+                paramsMM[n_source*j+k] -= epsilon
+                paramsPM[n_source*i+k] += epsilon
+                paramsPM[n_source*j+k] -= epsilon
+                paramsMP[n_source*i+k] -= epsilon
+                paramsMP[n_source*j+k] += epsilon
+
+                #lnlikelihood at those positions
+                pp = pta.get_lnlikelihood(paramsPP)
+                mm = pta.get_lnlikelihood(paramsMM)
+                pm = pta.get_lnlikelihood(paramsPM)
+                mp = pta.get_lnlikelihood(paramsMP)
+
+                #calculate off-diagonal elements of the Hessian from a central finite element scheme
+                #note the minus sign compared to the regular Hessian
+                fisher[k,i,j] = -(pp - mp - pm + mm)/(4.0*epsilon*epsilon)
+                fisher[k,j,i] = -(pp - mp - pm + mm)/(4.0*epsilon*epsilon)
+        
+        #print(fisher)
+        #correct for the given temperature of the chain    
+        fisher = fisher/T_chain
+      
+        try:
+            #Filter nans and infs and replace them with 1s
+            #this will imply that we will set the eigenvalue to 100 a few lines below
+            FISHER = np.where(np.isfinite(fisher[k,:,:]), fisher[k,:,:], 1.0)
+            if not np.array_equal(FISHER, fisher[k,:,:]):
+                print("Changed some nan elements in the Fisher matrix to 1.0")
+
+            #Find eigenvalues and eigenvectors of the Fisher matrix
+            w, v = np.linalg.eig(FISHER)
+
+            #filter w for eigenvalues smaller than 100 and set those to 100 -- Neil's trick
+            eig_limit = 100.0    
+            W = np.where(np.abs(w)>eig_limit, w, eig_limit)
+            #print(W)
+            #print(np.sum(v**2, axis=0))
+            #if T_chain==1.0: print(W)
+            #if T_chain==1.0: print(v)
+
+            eig.append( (np.sqrt(1.0/np.abs(W))*v).T )
+            #print(np.sum(eig**2, axis=1))
+            #if T_chain==1.0: print(eig)
+
+        except:
+            print("An Error occured in the eigenvalue calculation")
+            eig.append( np.array(False) )
+
+        #import matplotlib.pyplot as plt
+        #plt.figure()
+        #plt.imshow(np.log10(np.abs(np.real(np.array(FISHER)))))
+        #plt.colorbar()
     
-    #print(fisher)
-    #correct for the given temperature of the chain    
-    fisher = fisher/T_chain
-  
-    try:
-        #Filter nans and infs and replace them with 1s
-        #this will imply that we will set the eigenvalue to 100 a few lines below
-        FISHER = np.where(np.isfinite(fisher), fisher, 1.0)
-        if not np.array_equal(FISHER, fisher):
-            print("Changed some nan elements in the Fisher matrix to 1.0")
-
-        #Find eigenvalues and eigenvectors of the Fisher matrix
-        w, v = np.linalg.eig(FISHER)
-
-        #filter w for eigenvalues smaller than 100 and set those to 100 -- Neil's trick
-        eig_limit = 100.0    
-        W = np.where(np.abs(w)>eig_limit, w, eig_limit)
-        #print(W)
-        #print(np.sum(v**2, axis=0))
-        #if T_chain==1.0: print(W)
-        #if T_chain==1.0: print(v)
-
-        eig = (np.sqrt(1.0/np.abs(W))*v).T
-        #print(np.sum(eig**2, axis=1))
-        #if T_chain==1.0: print(eig)
-
-    except:
-        print("An Error occured in the eigenvalue calculation")
-        eig = np.array(False)
-
-    #import matplotlib.pyplot as plt
-    #plt.figure()
-    #plt.imshow(np.log10(np.abs(np.real(np.array(FISHER)))))
-    #plt.colorbar()
-    
-    return eig
+    return np.array(eig)
 
 ################################################################################
 #
