@@ -49,7 +49,7 @@ def run_ptmcmc(N, T_max, n_chain, base_model, pulsars, regular_weight=3, PT_swap
         model.append(s(p))
     pta = signal_base.PTA(model)
 
-    #print(pta.params)
+    print(pta.params)
 
     #getting the number of dimensions
     #ndim = len(pta.params)
@@ -83,8 +83,9 @@ def run_ptmcmc(N, T_max, n_chain, base_model, pulsars, regular_weight=3, PT_swap
     samples = np.zeros((n_chain, N, n_source*7+1))
     for j in range(n_chain):
         samples[j,0,0] = n_source
-        #samples[j,0,1:] = np.hstack(p.sample() for p in pta.params)
-        samples[j,0,1:] = np.array([0.5, -0.5, 0.5403, 0.8776, 4.5, 3.5, -8.0969, -7.3979, -13.4133, -12.8381, 1.0, 0.5, 1.0, 0.5])
+        #TODO maybe start from an Fe-proposed point?
+        samples[j,0,1:] = np.hstack(p.sample() for p in pta.params)
+        #samples[j,0,1:] = np.array([0.5, -0.5, 0.5403, 0.8776, 4.5, 3.5, -8.0969, -7.3979, -13.4133, -12.8381, 1.0, 0.5, 1.0, 0.5])
         #samples[j,0,1:] = np.array([0.0, 0.54, 1.0, -8.0, -13.39, 2.0, 0.5])
     print(samples[0,0,:])
 
@@ -259,9 +260,9 @@ def do_fe_global_jump(n_chain, n_source, pta, samples, i, Ts, a_yes, a_no, fe_fi
     ndim = n_source*7
 
     #set probability of deterministic vs flat proposal in extrinsic parameters
-    p_det = 0.9
+    p_det = 0.5
     #set width of deterministic proposal
-    alpha = 0.01
+    alpha = 0.1
 
     #print("Global proposal properties: p_det={0}, width={1}".format(p_det,alpha))
 
@@ -272,101 +273,125 @@ def do_fe_global_jump(n_chain, n_source, pta, samples, i, Ts, a_yes, a_no, fe_fi
     #    fe_limit=200
     
     for j in range(n_chain):
+        accepted = False
+        while accepted==False:
+            f_new = 10**(pta.params[3*n_source].sample())
+            f_idx = (np.abs(freqs - f_new)).argmin()
 
-        new_point = np.zeros(n_source*7)
-        for k in range(n_source):
-            accepted = False
-            while accepted==False:
-                f_new = 10**(pta.params[3*n_source].sample())
-                f_idx = (np.abs(freqs - f_new)).argmin()
+            gw_theta = np.arccos(pta.params[0*n_source].sample())
+            gw_phi = pta.params[2*n_source].sample()
+            hp_idx = hp.ang2pix(hp.get_nside(fe), gw_theta, gw_phi)
 
-                gw_theta = np.arccos(pta.params[0*n_source].sample())
-                gw_phi = pta.params[2*n_source].sample()
-                hp_idx = hp.ang2pix(hp.get_nside(fe), gw_theta, gw_phi)
+            fe_new_point = fe[f_idx, hp_idx]
+            if np.random.uniform()<(fe_new_point/fe_limit):
+                accepted = True
+        #if j==0: print("f={0} Hz; (theta,phi)=({1},{2})".format(f_new, gw_theta, gw_phi))
 
-                fe_new_point = fe[f_idx, hp_idx]
-                if np.random.uniform()<(fe_new_point/fe_limit):
-                    accepted = True
-            #if j==0: print("f={0} Hz; (theta,phi)=({1},{2})".format(f_new, gw_theta, gw_phi))
+        if np.random.uniform()<p_det:
+            deterministic=True
+        else:
+            deterministic=False
 
-            if np.random.uniform()<p_det:
-                deterministic=True
-            else:
-                deterministic=False
+        if deterministic:
+            cos_inc = np.cos(inc_max[f_idx, hp_idx]) + 2*alpha*(np.random.uniform()-0.5)
+            psi = psi_max[f_idx, hp_idx] + 2*alpha*(np.random.uniform()-0.5)
+            phase0 = phase0_max[f_idx, hp_idx] + 2*alpha*(np.random.uniform()-0.5)
+            log10_h = np.log10(h_max[f_idx, hp_idx]) + 2*alpha*(np.random.uniform()-0.5)
+        else:
+            cos_inc = pta.params[1*n_source].sample()
+            psi = pta.params[6*n_source].sample()
+            phase0 = pta.params[5*n_source].sample()
+            log10_h = pta.params[4*n_source].sample()
 
-            if deterministic:
-                cos_inc = np.cos(inc_max[f_idx, hp_idx]) + 2*alpha*(np.random.uniform()-0.5)
-                psi = psi_max[f_idx, hp_idx] + 2*alpha*(np.random.uniform()-0.5)
-                phase0 = phase0_max[f_idx, hp_idx] + 2*alpha*(np.random.uniform()-0.5)
-                log10_h = np.log10(h_max[f_idx, hp_idx]) + 2*alpha*(np.random.uniform()-0.5)
-            else:
-                cos_inc = pta.params[1*n_source].sample()
-                psi = pta.params[6*n_source].sample()
-                phase0 = pta.params[5*n_source].sample()
-                log10_h = pta.params[4*n_source].sample()
-
-            new_point[k:k+n_source*7:n_source] = np.array([np.cos(gw_theta), cos_inc, gw_phi, np.log10(f_new),
-                                  log10_h, phase0, psi])
+        #print("hah")
+        #if j==0: print(pta.get_lnlikelihood(samples[j,i,1:]))
+        #choose randomly which source to change
+        source_select = np.random.randint(n_source)
+        new_point = np.copy(samples[j,i,1:])
+        new_point[source_select:source_select+n_source*7:n_source] = np.array([np.cos(gw_theta), cos_inc, gw_phi, np.log10(f_new),
+                                                                               log10_h, phase0, psi])
         #if j==0: print("----------------------------------")
-        #if j==0: print(j, deterministic)
+        #if j==0:
+        #    print('-'*30)
+        #    print(deterministic)
+        #    print(source_select)
+        #    print(samples[j,i,1:])
+        #    print(new_point)
+        #    print(pta.get_lnlikelihood(new_point))
+        #    print(pta.get_lnlikelihood(samples[j,i,1:]))
+        #    print(pta.get_lnlikelihood(new_point[:]), pta.get_lnlikelihood(samples[j,i,1:]))
+        #    print(pta.get_lnlikelihood(new_point), pta.get_lnlikelihood(samples[j,i,1:]))
+        test_array = np.array([  0.03716533,   0.36221859,   0.25842528,   0.51300182,   3.51393577,
+   4.74312836,  -8.04418148,  -8.08967996, -13.32766946, -13.51676111,
+   1.23215406,   1.13994404,   1.16368098,   0.34977929])
+        test_likelihood = pta.get_lnlikelihood(test_array)
 
-        #SUPER HACKY AND BAD -- NEED TO DO HASTINGS RATIO PROPERLY!!!!!
-        source_select=1
 
         if fe_new_point>fe_limit:
             fe_new_point=fe_limit        
-
-        log_acc_ratio = pta.get_lnlikelihood(new_point[:])
-        log_acc_ratio += pta.get_lnprior(new_point[:])
+        #if j==0: print("Parts of log_acc ratio")
+        log_acc_ratio = pta.get_lnlikelihood(new_point)
+        #if j==0: print(log_acc_ratio)
+        log_acc_ratio += pta.get_lnprior(new_point)
+        #if j==0: print(log_acc_ratio)
+        #if j==0: print(samples[j,i,1:])
         log_acc_ratio += -pta.get_lnlikelihood(samples[j,i,1:])
+        #if j==0: print(log_acc_ratio)
         log_acc_ratio += -pta.get_lnprior(samples[j,i,1:])
+        #if j==0: print(log_acc_ratio)
 
         #get ratio of proposal density for the Hastings ratio
         f_old = 10**samples[j,i,3*n_source+source_select+1]
-        f_idx = (np.abs(freqs - f_old)).argmin()
+        f_idx_old = (np.abs(freqs - f_old)).argmin()
         
         gw_theta_old = np.arccos(samples[j,i,source_select+1])
         gw_phi_old = samples[j,i,2*n_source+source_select+1]
-        hp_idx = hp.ang2pix(hp.get_nside(fe), gw_theta_old, gw_phi_old)
+        hp_idx_old = hp.ang2pix(hp.get_nside(fe), gw_theta_old, gw_phi_old)
 
-        fe_old_point = fe[f_idx, hp_idx]
+        fe_old_point = fe[f_idx_old, hp_idx_old]
         if fe_old_point>fe_limit:
             fe_old_point = fe_limit
 
-        cos_inc_old = np.cos(inc_max[f_idx, hp_idx])
-        psi_old = psi_max[f_idx, hp_idx]
-        phase0_old = phase0_max[f_idx, hp_idx]
-        log10_h_old = np.log10(h_max[f_idx, hp_idx])
+        cos_inc_old = np.cos(inc_max[f_idx_old, hp_idx_old])
+        psi_old = psi_max[f_idx_old, hp_idx_old]
+        phase0_old = phase0_max[f_idx_old, hp_idx_old]
+        log10_h_old = np.log10(h_max[f_idx_old, hp_idx_old])
         
-        old_params = [cos_inc_old, log10_h_old, phase0_old, psi_old]
+        old_params_fe = [cos_inc_old, log10_h_old, phase0_old, psi_old]
         prior_ranges = [2.0, 7.0, 2.0*np.pi, np.pi]
         
+        new_params = [cos_inc, log10_h, phase0, psi]
+        new_params_fe = [np.cos(inc_max[f_idx, hp_idx]), np.log10(h_max[f_idx, hp_idx]),
+                        phase0_max[f_idx, hp_idx], psi_max[f_idx, hp_idx]]
+        
         hastings_extra_factor=1.0
-        for k, prior_range, old_param in zip([1,4,5,6], prior_ranges, old_params):
-            param = samples[j,i,k*n_source+source_select+1]
-            det_old = np.abs(param-old_param)<alpha
-            #TODO: the correct way to do this would be to check if the new
-            #parameters are within the deterministic range, because they can fall
-            #there even if we did a draw from prior, i.e. deterministic=False
-            if deterministic and not det_old:
-                #if j==0: print("From non-det to det")
+        for k, prior_range, old_param_fe, new_param, new_param_fe in zip([1,4,5,6], prior_ranges, old_params_fe, new_params, new_params_fe):
+            old_param = samples[j,i,k*n_source+source_select+1]
+            #True if the ith sample was at a place where we could jump with a deterministic jump
+            #False otherwise            
+            det_old = np.abs(old_param-old_param_fe)<alpha
+            det_new = np.abs(new_param-new_param_fe)<alpha
+            if det_new and not det_old:
+                if j==0: print("From non-det to det")
                 hastings_extra_factor *= 1.0/( p_det/(1-p_det)*prior_range/(2*alpha) + 1 )
-            elif not deterministic and det_old:
-                #if j==0: print("From det to non-det")
+            elif not det_new and det_old:
+                if j==0: print("From det to non-det")
                 hastings_extra_factor *= p_det/(1-p_det)*prior_range/(2*alpha) + 1
 
         
-        #if j==0:
-        #    print('-'*30)
-        #    print(np.exp(log_acc_ratio))
-        #    print(fe_old_point/fe_new_point)
-        #    print(hastings_extra_factor)
+        if j==0:
+            print("i={0}".format(i))
+            print("L-ratio={0}".format(np.exp(log_acc_ratio)))
+            print("Fe-ratio={0}".format(fe_old_point/fe_new_point))
+            print("Extra factor={0}".format(hastings_extra_factor))
 
         acc_ratio = np.exp(log_acc_ratio)**(1/Ts[j])*(fe_old_point/fe_new_point)*hastings_extra_factor
-        #if j==0: print(acc_ratio)
+        if j==0: print(acc_ratio)
         samples[j,i+1,0] = n_source
         if np.random.uniform()<=acc_ratio:
-            #if j==0: print('yeeeh')
+            if j==0:
+                print('yeeeh')
+                if not deterministic: print('Ohh jeez')
             for k in range(ndim):
                 samples[j,i+1,k+1] = new_point[k]
             a_yes[j+1]+=1
@@ -392,9 +417,9 @@ def regular_jump(n_chain, n_source, pta, samples, i, Ts, a_yes, a_no, eig):
         jump = np.array([jump_1source[int(i/n_source)] if i%n_source==source_select else 0.0 for i in range(ndim)])
 
         new_point = samples[j,i,1:] + jump*np.random.normal()
-        #if j==0:        
-        #    print('-'*20)
-        #    print(i)
+        if j==0:        
+            print('-'*20)
+            print("i={0}".format(i))
         #    print(source_select)
         #    print(jump)        
         #    print(samples[j,i,:])
@@ -406,9 +431,10 @@ def regular_jump(n_chain, n_source, pta, samples, i, Ts, a_yes, a_no, eig):
         log_acc_ratio += -pta.get_lnprior(samples[j,i,1:])
 
         acc_ratio = np.exp(log_acc_ratio)**(1/Ts[j])
+        if j==0: print("L-ratio(fisher)={0}".format(acc_ratio))
         samples[j,i+1,0] = n_source
         if np.random.uniform()<=acc_ratio:
-            #if j==0: print("Yupiiiiii")
+            if j==0: print("Yupiiiiii")
             for k in range(ndim):
                 samples[j,i+1,k+1] = new_point[k]
             a_yes[j+1]+=1
@@ -427,6 +453,25 @@ def do_pt_swap(n_chain, n_source, pta, samples, i, Ts, a_yes, a_no, swap_record)
     
     swap_chain = np.random.randint(n_chain-1)
 
+    print("-"*30)
+
+    print(samples[swap_chain,i,1:])
+    print(samples[swap_chain+1,i,1:])
+    print(pta.get_lnlikelihood(samples[swap_chain+1,i,1:])/Ts[swap_chain]+pta.get_lnprior(samples[swap_chain+1,i,1:])/Ts[swap_chain]-
+          pta.get_lnlikelihood(samples[swap_chain,i,1:])/Ts[swap_chain]-pta.get_lnprior(samples[swap_chain,i,1:])/Ts[swap_chain])
+
+    print(pta.get_lnlikelihood(samples[swap_chain,i,1:])/Ts[swap_chain+1]+pta.get_lnprior(samples[swap_chain,i,1:])/Ts[swap_chain+1]-
+          pta.get_lnlikelihood(samples[swap_chain+1,i,1:])/Ts[swap_chain+1]-pta.get_lnprior(samples[swap_chain+1,i,1:])/Ts[swap_chain+1])
+
+    print(-pta.get_lnlikelihood(samples[swap_chain,i,1:])/Ts[swap_chain])
+    print(-pta.get_lnprior(samples[swap_chain,i,1:])/Ts[swap_chain])
+    print(-pta.get_lnlikelihood(samples[swap_chain+1,i,1:])/Ts[swap_chain+1])
+    print(-pta.get_lnprior(samples[swap_chain+1,i,1:])/Ts[swap_chain+1])
+    print(pta.get_lnlikelihood(samples[swap_chain+1,i,1:])/Ts[swap_chain])
+    print(pta.get_lnprior(samples[swap_chain+1,i,1:])/Ts[swap_chain])
+    print(pta.get_lnlikelihood(samples[swap_chain,i,1:])/Ts[swap_chain+1])
+    print(pta.get_lnprior(samples[swap_chain,i,1:])/Ts[swap_chain+1])
+
     log_acc_ratio = -pta.get_lnlikelihood(samples[swap_chain,i,1:])/Ts[swap_chain]
     log_acc_ratio += -pta.get_lnprior(samples[swap_chain,i,1:])/Ts[swap_chain]
     log_acc_ratio += -pta.get_lnlikelihood(samples[swap_chain+1,i,1:])/Ts[swap_chain+1]
@@ -439,7 +484,10 @@ def do_pt_swap(n_chain, n_source, pta, samples, i, Ts, a_yes, a_no, swap_record)
     samples[:,i+1,0] = n_source
 
     acc_ratio = np.exp(log_acc_ratio)
+    print("L-ratio(PT)={0}".format(acc_ratio))
+    print(swap_chain)
     if np.random.uniform()<=acc_ratio:
+        print("Woooow")
         for j in range(n_chain):
             if j==swap_chain:
                 for k in range(ndim):
