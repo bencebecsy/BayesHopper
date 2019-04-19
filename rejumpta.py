@@ -320,25 +320,34 @@ def do_fe_global_jump(n_chain, n_source, pta, samples, i, Ts, a_yes, a_no, fe_fi
         #    print(pta.get_lnlikelihood(new_point))
         #    print(pta.get_lnlikelihood(samples[j,i,1:]))
         #    print(pta.get_lnlikelihood(new_point[:]), pta.get_lnlikelihood(samples[j,i,1:]))
-        #    print(pta.get_lnlikelihood(new_point), pta.get_lnlikelihood(samples[j,i,1:]))
-        test_array = np.array([  0.03716533,   0.36221859,   0.25842528,   0.51300182,   3.51393577,
-   4.74312836,  -8.04418148,  -8.08967996, -13.32766946, -13.51676111,
-   1.23215406,   1.13994404,   1.16368098,   0.34977929])
-        test_likelihood = pta.get_lnlikelihood(test_array)
-
+        #print(pta.get_lnlikelihood(new_point))
+        #print(pta.get_lnlikelihood(samples[j,i,1:]))
+        #test_array = np.array([  0.03716533,   0.36221859,   0.25842528,   0.51300182,   3.51393577,
+   #4.74312836,  -8.04418148,  -8.08967996, -13.32766946, -13.51676111,
+   #1.23215406,   1.13994404,   1.16368098,   0.34977929])
+        #test_likelihood = pta.get_lnlikelihood(test_array)
+        #print(pta.get_lnlikelihood(new_point))
+        #print(pta.get_lnlikelihood(samples[j,i,1:]))
 
         if fe_new_point>fe_limit:
             fe_new_point=fe_limit        
         #if j==0: print("Parts of log_acc ratio")
         log_acc_ratio = pta.get_lnlikelihood(new_point)
-        #if j==0: print(log_acc_ratio)
+        #if j==0:
+        #    print(pta.get_lnlikelihood(new_point))
+        #    print(log_acc_ratio)
         log_acc_ratio += pta.get_lnprior(new_point)
-        #if j==0: print(log_acc_ratio)
-        #if j==0: print(samples[j,i,1:])
+        #if j==0:
+        #    print(pta.get_lnprior(new_point))
+        #    print(log_acc_ratio)
         log_acc_ratio += -pta.get_lnlikelihood(samples[j,i,1:])
-        #if j==0: print(log_acc_ratio)
+        #if j==0:
+        #    print(-pta.get_lnlikelihood(samples[j,i,1:]))
+        #    print(log_acc_ratio)
         log_acc_ratio += -pta.get_lnprior(samples[j,i,1:])
-        #if j==0: print(log_acc_ratio)
+        #if j==0:
+        #    print(-pta.get_lnprior(samples[j,i,1:]))
+        #    print(log_acc_ratio)
 
         #get ratio of proposal density for the Hastings ratio
         f_old = 10**samples[j,i,3*n_source+source_select+1]
@@ -372,26 +381,26 @@ def do_fe_global_jump(n_chain, n_source, pta, samples, i, Ts, a_yes, a_no, fe_fi
             det_old = np.abs(old_param-old_param_fe)<alpha
             det_new = np.abs(new_param-new_param_fe)<alpha
             if det_new and not det_old:
-                if j==0: print("From non-det to det")
+                #if j==0: print("From non-det to det")
                 hastings_extra_factor *= 1.0/( p_det/(1-p_det)*prior_range/(2*alpha) + 1 )
             elif not det_new and det_old:
-                if j==0: print("From det to non-det")
+                #if j==0: print("From det to non-det")
                 hastings_extra_factor *= p_det/(1-p_det)*prior_range/(2*alpha) + 1
 
         
-        if j==0:
-            print("i={0}".format(i))
-            print("L-ratio={0}".format(np.exp(log_acc_ratio)))
-            print("Fe-ratio={0}".format(fe_old_point/fe_new_point))
-            print("Extra factor={0}".format(hastings_extra_factor))
+        #if j==0:
+        #    print("i={0}".format(i))
+        #    print("L-ratio={0}".format(np.exp(log_acc_ratio)))
+        #    print("Fe-ratio={0}".format(fe_old_point/fe_new_point))
+        #    print("Extra factor={0}".format(hastings_extra_factor))
 
         acc_ratio = np.exp(log_acc_ratio)**(1/Ts[j])*(fe_old_point/fe_new_point)*hastings_extra_factor
-        if j==0: print(acc_ratio)
+        #if j==0: print(acc_ratio)
         samples[j,i+1,0] = n_source
         if np.random.uniform()<=acc_ratio:
-            if j==0:
-                print('yeeeh')
-                if not deterministic: print('Ohh jeez')
+            #if j==0:
+            #    print('yeeeh')
+            #    if not deterministic: print('Ohh jeez')
             for k in range(ndim):
                 samples[j,i+1,k+1] = new_point[k]
             a_yes[j+1]+=1
@@ -417,9 +426,9 @@ def regular_jump(n_chain, n_source, pta, samples, i, Ts, a_yes, a_no, eig):
         jump = np.array([jump_1source[int(i/n_source)] if i%n_source==source_select else 0.0 for i in range(ndim)])
 
         new_point = samples[j,i,1:] + jump*np.random.normal()
-        if j==0:        
-            print('-'*20)
-            print("i={0}".format(i))
+        #if j==0:        
+        #    print('-'*20)
+        #    print("i={0}".format(i))
         #    print(source_select)
         #    print(jump)        
         #    print(samples[j,i,:])
@@ -431,10 +440,10 @@ def regular_jump(n_chain, n_source, pta, samples, i, Ts, a_yes, a_no, eig):
         log_acc_ratio += -pta.get_lnprior(samples[j,i,1:])
 
         acc_ratio = np.exp(log_acc_ratio)**(1/Ts[j])
-        if j==0: print("L-ratio(fisher)={0}".format(acc_ratio))
+        #if j==0: print("L-ratio(fisher)={0}".format(acc_ratio))
         samples[j,i+1,0] = n_source
         if np.random.uniform()<=acc_ratio:
-            if j==0: print("Yupiiiiii")
+            #if j==0: print("Yupiiiiii")
             for k in range(ndim):
                 samples[j,i+1,k+1] = new_point[k]
             a_yes[j+1]+=1
@@ -453,24 +462,24 @@ def do_pt_swap(n_chain, n_source, pta, samples, i, Ts, a_yes, a_no, swap_record)
     
     swap_chain = np.random.randint(n_chain-1)
 
-    print("-"*30)
+    #print("-"*30)
 
-    print(samples[swap_chain,i,1:])
-    print(samples[swap_chain+1,i,1:])
-    print(pta.get_lnlikelihood(samples[swap_chain+1,i,1:])/Ts[swap_chain]+pta.get_lnprior(samples[swap_chain+1,i,1:])/Ts[swap_chain]-
-          pta.get_lnlikelihood(samples[swap_chain,i,1:])/Ts[swap_chain]-pta.get_lnprior(samples[swap_chain,i,1:])/Ts[swap_chain])
+    #print(samples[swap_chain,i,1:])
+    #print(samples[swap_chain+1,i,1:])
+    #print(pta.get_lnlikelihood(samples[swap_chain+1,i,1:])/Ts[swap_chain]+pta.get_lnprior(samples[swap_chain+1,i,1:])/Ts[swap_chain]-
+    #      pta.get_lnlikelihood(samples[swap_chain,i,1:])/Ts[swap_chain]-pta.get_lnprior(samples[swap_chain,i,1:])/Ts[swap_chain])
 
-    print(pta.get_lnlikelihood(samples[swap_chain,i,1:])/Ts[swap_chain+1]+pta.get_lnprior(samples[swap_chain,i,1:])/Ts[swap_chain+1]-
-          pta.get_lnlikelihood(samples[swap_chain+1,i,1:])/Ts[swap_chain+1]-pta.get_lnprior(samples[swap_chain+1,i,1:])/Ts[swap_chain+1])
+    #print(pta.get_lnlikelihood(samples[swap_chain,i,1:])/Ts[swap_chain+1]+pta.get_lnprior(samples[swap_chain,i,1:])/Ts[swap_chain+1]-
+    #      pta.get_lnlikelihood(samples[swap_chain+1,i,1:])/Ts[swap_chain+1]-pta.get_lnprior(samples[swap_chain+1,i,1:])/Ts[swap_chain+1])
 
-    print(-pta.get_lnlikelihood(samples[swap_chain,i,1:])/Ts[swap_chain])
-    print(-pta.get_lnprior(samples[swap_chain,i,1:])/Ts[swap_chain])
-    print(-pta.get_lnlikelihood(samples[swap_chain+1,i,1:])/Ts[swap_chain+1])
-    print(-pta.get_lnprior(samples[swap_chain+1,i,1:])/Ts[swap_chain+1])
-    print(pta.get_lnlikelihood(samples[swap_chain+1,i,1:])/Ts[swap_chain])
-    print(pta.get_lnprior(samples[swap_chain+1,i,1:])/Ts[swap_chain])
-    print(pta.get_lnlikelihood(samples[swap_chain,i,1:])/Ts[swap_chain+1])
-    print(pta.get_lnprior(samples[swap_chain,i,1:])/Ts[swap_chain+1])
+    #print(-pta.get_lnlikelihood(samples[swap_chain,i,1:])/Ts[swap_chain])
+    #print(-pta.get_lnprior(samples[swap_chain,i,1:])/Ts[swap_chain])
+    #print(-pta.get_lnlikelihood(samples[swap_chain+1,i,1:])/Ts[swap_chain+1])
+    #print(-pta.get_lnprior(samples[swap_chain+1,i,1:])/Ts[swap_chain+1])
+    #print(pta.get_lnlikelihood(samples[swap_chain+1,i,1:])/Ts[swap_chain])
+    #print(pta.get_lnprior(samples[swap_chain+1,i,1:])/Ts[swap_chain])
+    #print(pta.get_lnlikelihood(samples[swap_chain,i,1:])/Ts[swap_chain+1])
+    #print(pta.get_lnprior(samples[swap_chain,i,1:])/Ts[swap_chain+1])
 
     log_acc_ratio = -pta.get_lnlikelihood(samples[swap_chain,i,1:])/Ts[swap_chain]
     log_acc_ratio += -pta.get_lnprior(samples[swap_chain,i,1:])/Ts[swap_chain]
@@ -484,10 +493,10 @@ def do_pt_swap(n_chain, n_source, pta, samples, i, Ts, a_yes, a_no, swap_record)
     samples[:,i+1,0] = n_source
 
     acc_ratio = np.exp(log_acc_ratio)
-    print("L-ratio(PT)={0}".format(acc_ratio))
-    print(swap_chain)
+    #print("L-ratio(PT)={0}".format(acc_ratio))
+    #print(swap_chain)
     if np.random.uniform()<=acc_ratio:
-        print("Woooow")
+        #print("Woooow")
         for j in range(n_chain):
             if j==swap_chain:
                 for k in range(ndim):
