@@ -21,11 +21,10 @@ import enterprise_cw_funcs_from_git as models
 #
 ################################################################################
 
-def run_ptmcmc(N, T_max, n_chain, base_model, pulsars, regular_weight=3, PT_swap_weight=1,
+def run_ptmcmc(N, T_max, n_chain, base_model, pulsars, n_source=1, regular_weight=3, PT_swap_weight=1,
                Fe_proposal_weight=0, fe_file=None, draw_from_prior_weight=0,
                de_weight=0):
     #setting up the pta object
-    n_source = 2
     cws = []
     for i in range(n_source):
         log10_fgw = parameter.Uniform(np.log10(3.5e-9), -7)('log10_fgw'+str(i))
@@ -42,8 +41,10 @@ def run_ptmcmc(N, T_max, n_chain, base_model, pulsars, regular_weight=3, PT_swap
                      psi=psi, cos_inc=cos_inc, tref=53000*86400)
         cws.append(models.CWSignal(cw_wf, psrTerm=False, name='cw'+str(i)))
         
-    s = base_model + cws[0] + cws[1]
-    
+    s = base_model
+    for i in range(n_source):
+        s = s + cws[i]
+
     model = []
     for p in pulsars:
         model.append(s(p))
