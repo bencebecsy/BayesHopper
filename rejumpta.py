@@ -21,42 +21,47 @@ import enterprise_cw_funcs_from_git as models
 #
 ################################################################################
 
-def run_ptmcmc(N, T_max, n_chain, base_model, pulsars, n_source=1, regular_weight=3, PT_swap_weight=1,
+def run_ptmcmc(N, T_max, n_chain, base_model, pulsars, max_n_source=1, regular_weight=3, PT_swap_weight=1,
                Fe_proposal_weight=0, fe_file=None, draw_from_prior_weight=0,
                de_weight=0):
     #setting up the pta object
     cws = []
-    for i in range(n_source):
-        log10_fgw = parameter.Uniform(np.log10(3.5e-9), -7)('log10_fgw'+str(i))
-        log10_mc = parameter.Constant(np.log10(5e9))('log10_mc'+str(i))
-        cos_gwtheta = parameter.Uniform(-1, 1)('cos_gwtheta'+str(i))
-        gwphi = parameter.Uniform(0, 2*np.pi)('gwphi'+str(i))
-        phase0 = parameter.Uniform(0, 2*np.pi)('phase0'+str(i))
-        psi = parameter.Uniform(0, np.pi)('psi'+str(i))
-        cos_inc = parameter.Uniform(-1, 1)('cos_inc'+str(i))
+    for i in range(max_n_source):
+        log10_fgw = parameter.Uniform(np.log10(3.5e-9), -7)(str(i)+'_'+'log10_fgw')
+        log10_mc = parameter.Constant(np.log10(5e9))(str(i)+'_'+'log10_mc')
+        cos_gwtheta = parameter.Uniform(-1, 1)(str(i)+'_'+'cos_gwtheta')
+        gwphi = parameter.Uniform(0, 2*np.pi)(str(i)+'_'+'gwphi')
+        phase0 = parameter.Uniform(0, 2*np.pi)(str(i)+'_'+'phase0')
+        psi = parameter.Uniform(0, np.pi)(str(i)+'_'+'psi')
+        cos_inc = parameter.Uniform(-1, 1)(str(i)+'_'+'cos_inc')
         #log10_h = parameter.LinearExp(-18, -11)('log10_h'+str(i))
-        log10_h = parameter.Uniform(-18, -11)('log10_h'+str(i))
+        log10_h = parameter.Uniform(-18, -11)(str(i)+'_'+'log10_h')
         cw_wf = models.cw_delay(cos_gwtheta=cos_gwtheta, gwphi=gwphi, log10_mc=log10_mc,
                      log10_h=log10_h, log10_fgw=log10_fgw, phase0=phase0,
                      psi=psi, cos_inc=cos_inc, tref=53000*86400)
         cws.append(models.CWSignal(cw_wf, psrTerm=False, name='cw'+str(i)))
-        
-    s = base_model
-    for i in range(n_source):
-        s = s + cws[i]
+    
+    ptas = []
+    for n_source in range(1,max_n_source+1):
+        s = base_model
+        for i in range(n_source):
+            s = s + cws[i]
 
-    model = []
-    for p in pulsars:
-        model.append(s(p))
-    pta = signal_base.PTA(model)
+        model = []
+        for p in pulsars:
+            model.append(s(p))
+        ptas.append(signal_base.PTA(model))
 
-    print(pta.params)
+    for i, PTA in enumerate(ptas):
+        print(i)
+        print(PTA.params)
+        #print(PTA.summary())
 
     #getting the number of dimensions
     #ndim = len(pta.params)
 
     #do n_global_first global proposal steps before starting any other step
-    n_global_first = 0
+    n_global_first = 1000
     
     #fisher updating every n_fish_update step
     n_fish_update = 200 #50
@@ -78,14 +83,17 @@ def run_ptmcmc(N, T_max, n_chain, base_model, pulsars, n_source=1, regular_weigh
  Temperature ladder is:\n".format(n_chain,c),Ts)
 
     #setting up array for the fisher eigenvalues
-    eig = np.ones((n_chain, n_source, 7, 7))*0.1
+    eig = np.ones((n_chain, max_n_source, 7, 7))*0.1
 
     #setting up array for the samples and filling first sample with random draw
-    samples = np.zeros((n_chain, N, n_source*7+1))
+    samples = np.zeros((n_chain, N, max_n_source*7+1))
     for j in range(n_chain):
+        n_source = np.random.choice(max_n_source) + 1
         samples[j,0,0] = n_source
+        print(n_source)
         #TODO maybe start from an Fe-proposed point?
-        samples[j,0,1:] = np.hstack(p.sample() for p in pta.params)
+        samples[j,0,1:n_source*7+1] = np.hstack(p.sample() for p in ptas[n_source-1].params)
+        samples[j,0,n_source*7+1:] = np.zeros((max_n_source-n_source)*7)
         #samples[j,0,1:] = np.array([0.5, -0.5, 0.5403, 0.8776, 4.5, 3.5, -8.0969, -7.3979, -13.4133, -12.8381, 1.0, 0.5, 1.0, 0.5])
         #samples[j,0,1:] = np.array([0.0, 0.54, 1.0, -8.0, -13.39, 2.0, 0.5])
     print(samples[0,0,:])
@@ -138,7 +146,7 @@ Draw from prior: {3:.2f}%\nDifferential evolution jump: {4:.2f}%".format(swap_pr
                 if np.all(eigenvectors):
                     eig[0,:,:,:] = eigenvectors
         if i<n_global_first:
-            do_fe_global_jump(n_chain, n_source, pta, samples, i, Ts, a_yes, a_no, fe_file)
+            do_fe_global_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, fe_file)
         else:
             #draw a random number to decide which jump to do
             jump_decide = np.random.uniform()
@@ -149,7 +157,7 @@ Draw from prior: {3:.2f}%\nDifferential evolution jump: {4:.2f}%".format(swap_pr
             #global proposal based on Fe-statistic
             elif jump_decide<swap_probability+fe_proposal_probability:
                 #print("Fe")
-                do_fe_global_jump(n_chain, n_source, pta, samples, i, Ts, a_yes, a_no, fe_file)
+                do_fe_global_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, fe_file)
             #draw from prior move
             elif jump_decide<swap_probability+fe_proposal_probability+draw_from_prior_probability:
                 do_draw_from_prior_move(n_chain, n_source, pta, samples, i, Ts, a_yes, a_no)
@@ -247,7 +255,7 @@ def do_draw_from_prior_move(n_chain, n_source, pta, samples, i, Ts, a_yes, a_no)
 #
 ################################################################################
 
-def do_fe_global_jump(n_chain, n_source, pta, samples, i, Ts, a_yes, a_no, fe_file):    
+def do_fe_global_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, fe_file):    
     if fe_file==None:
         raise Exception("Fe-statistics data file is needed for Fe global propsals")
     npzfile = np.load(fe_file)
@@ -258,7 +266,7 @@ def do_fe_global_jump(n_chain, n_source, pta, samples, i, Ts, a_yes, a_no, fe_fi
     phase0_max = npzfile['phase0_max']
     h_max = npzfile['h_max']
 
-    ndim = n_source*7
+    #ndim = n_source*7
 
     #set probability of deterministic vs flat proposal in extrinsic parameters
     p_det = 0.5
@@ -276,11 +284,11 @@ def do_fe_global_jump(n_chain, n_source, pta, samples, i, Ts, a_yes, a_no, fe_fi
     for j in range(n_chain):
         accepted = False
         while accepted==False:
-            f_new = 10**(pta.params[3*n_source].sample())
+            f_new = 10**(ptas[-1].params[3].sample())
             f_idx = (np.abs(freqs - f_new)).argmin()
 
-            gw_theta = np.arccos(pta.params[0*n_source].sample())
-            gw_phi = pta.params[2*n_source].sample()
+            gw_theta = np.arccos(ptas[-1].params[0].sample())
+            gw_phi = ptas[-1].params[2].sample()
             hp_idx = hp.ang2pix(hp.get_nside(fe), gw_theta, gw_phi)
 
             fe_new_point = fe[f_idx, hp_idx]
@@ -299,18 +307,23 @@ def do_fe_global_jump(n_chain, n_source, pta, samples, i, Ts, a_yes, a_no, fe_fi
             phase0 = phase0_max[f_idx, hp_idx] + 2*alpha*(np.random.uniform()-0.5)
             log10_h = np.log10(h_max[f_idx, hp_idx]) + 2*alpha*(np.random.uniform()-0.5)
         else:
-            cos_inc = pta.params[1*n_source].sample()
-            psi = pta.params[6*n_source].sample()
-            phase0 = pta.params[5*n_source].sample()
-            log10_h = pta.params[4*n_source].sample()
+            cos_inc = ptas[-1].params[1].sample()
+            psi = ptas[-1].params[6].sample()
+            phase0 = ptas[-1].params[5].sample()
+            log10_h = ptas[-1].params[4].sample()
 
         #print("hah")
         #if j==0: print(pta.get_lnlikelihood(samples[j,i,1:]))
         #choose randomly which source to change
+        n_source = int(np.copy(samples[j,i,0]))
         source_select = np.random.randint(n_source)
-        new_point = np.copy(samples[j,i,1:])
-        new_point[source_select:source_select+n_source*7:n_source] = np.array([np.cos(gw_theta), cos_inc, gw_phi, np.log10(f_new),
+        new_point = np.copy(samples[j,i,1:n_source*7+1])
+        new_point[source_select*7:(source_select+1)*7] = np.array([np.cos(gw_theta), cos_inc, gw_phi, np.log10(f_new),
                                                                                log10_h, phase0, psi])
+        
+        print(source_select)
+        print(samples[j,i,:])
+        print(new_point)
         #if j==0: print("----------------------------------")
         #if j==0:
         #    print('-'*30)
@@ -333,31 +346,32 @@ def do_fe_global_jump(n_chain, n_source, pta, samples, i, Ts, a_yes, a_no, fe_fi
         if fe_new_point>fe_limit:
             fe_new_point=fe_limit        
         #if j==0: print("Parts of log_acc ratio")
-        log_acc_ratio = pta.get_lnlikelihood(new_point)
+        log_acc_ratio = ptas[n_source-1].get_lnlikelihood(new_point)
         #if j==0:
         #    print(pta.get_lnlikelihood(new_point))
         #    print(log_acc_ratio)
-        log_acc_ratio += pta.get_lnprior(new_point)
+        log_acc_ratio += ptas[n_source-1].get_lnprior(new_point)
         #if j==0:
         #    print(pta.get_lnprior(new_point))
         #    print(log_acc_ratio)
-        log_acc_ratio += -pta.get_lnlikelihood(samples[j,i,1:])
+        log_acc_ratio += -ptas[n_source-1].get_lnlikelihood(samples[j,i,1:])
         #if j==0:
         #    print(-pta.get_lnlikelihood(samples[j,i,1:]))
         #    print(log_acc_ratio)
-        log_acc_ratio += -pta.get_lnprior(samples[j,i,1:])
+        log_acc_ratio += -ptas[n_source-1].get_lnprior(samples[j,i,1:])
         #if j==0:
         #    print(-pta.get_lnprior(samples[j,i,1:]))
         #    print(log_acc_ratio)
 
         #get ratio of proposal density for the Hastings ratio
-        f_old = 10**samples[j,i,3*n_source+source_select+1]
+        f_old = 10**samples[j,i,1+3+source_select*7]
         f_idx_old = (np.abs(freqs - f_old)).argmin()
-        
-        gw_theta_old = np.arccos(samples[j,i,source_select+1])
-        gw_phi_old = samples[j,i,2*n_source+source_select+1]
-        hp_idx_old = hp.ang2pix(hp.get_nside(fe), gw_theta_old, gw_phi_old)
 
+        gw_theta_old = np.arccos(samples[j,i,1+source_select*7])
+        gw_phi_old = samples[j,i,1+2+source_select*7]
+        hp_idx_old = hp.ang2pix(hp.get_nside(fe), gw_theta_old, gw_phi_old)
+        print(f_old, gw_theta_old, gw_phi_old)
+        
         fe_old_point = fe[f_idx_old, hp_idx_old]
         if fe_old_point>fe_limit:
             fe_old_point = fe_limit
@@ -368,6 +382,7 @@ def do_fe_global_jump(n_chain, n_source, pta, samples, i, Ts, a_yes, a_no, fe_fi
         log10_h_old = np.log10(h_max[f_idx_old, hp_idx_old])
         
         old_params_fe = [cos_inc_old, log10_h_old, phase0_old, psi_old]
+        #TODO:extract prior ranges from pta object!!!!
         prior_ranges = [2.0, 7.0, 2.0*np.pi, np.pi]
         
         new_params = [cos_inc, log10_h, phase0, psi]
@@ -376,7 +391,7 @@ def do_fe_global_jump(n_chain, n_source, pta, samples, i, Ts, a_yes, a_no, fe_fi
         
         hastings_extra_factor=1.0
         for k, prior_range, old_param_fe, new_param, new_param_fe in zip([1,4,5,6], prior_ranges, old_params_fe, new_params, new_params_fe):
-            old_param = samples[j,i,k*n_source+source_select+1]
+            old_param = samples[j,i,1+k+source_select*7]
             #True if the ith sample was at a place where we could jump with a deterministic jump
             #False otherwise            
             det_old = np.abs(old_param-old_param_fe)<alpha
@@ -398,16 +413,19 @@ def do_fe_global_jump(n_chain, n_source, pta, samples, i, Ts, a_yes, a_no, fe_fi
         acc_ratio = np.exp(log_acc_ratio)**(1/Ts[j])*(fe_old_point/fe_new_point)*hastings_extra_factor
         #if j==0: print(acc_ratio)
         samples[j,i+1,0] = n_source
+        samples[j,i+1,n_source*7+1:] = np.zeros((max_n_source-n_source)*7)
         if np.random.uniform()<=acc_ratio:
             #if j==0:
             #    print('yeeeh')
             #    if not deterministic: print('Ohh jeez')
-            for k in range(ndim):
-                samples[j,i+1,k+1] = new_point[k]
+            samples[j,i+1,1:n_source*7+1] = new_point
+            #for k in range(ndim):
+            #    samples[j,i+1,k+1] = new_point[k]
             a_yes[j+1]+=1
         else:
-            for k in range(ndim):
-                samples[j,i+1,k+1] = samples[j,i,k+1]
+            samples[j,i+1,1:n_source*7+1] = samples[j,i,1:n_source*7+1]
+            #for k in range(ndim):
+            #    samples[j,i+1,k+1] = samples[j,i,k+1]
             a_no[j+1]+=1
     
 
