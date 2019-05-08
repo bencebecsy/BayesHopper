@@ -157,7 +157,7 @@ Draw from prior: {3:.2f}%\nDifferential evolution jump: {4:.2f}%".format(swap_pr
             #PT swap move
             if jump_decide<swap_probability:
                 #print("swap")
-                do_pt_swap(n_chain, n_source, pta, samples, i, Ts, a_yes, a_no, swap_record)
+                do_pt_swap(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, swap_record)
             #global proposal based on Fe-statistic
             elif jump_decide<swap_probability+fe_proposal_probability:
                 #print("Fe")
@@ -448,13 +448,13 @@ def regular_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, eig):
         jump = np.array([jump_1source[int(i-source_select*7)] if i>=source_select*7 and i<(source_select+1)*7 else 0.0 for i in range(ndim)])
 
         new_point = samples[j,i,1:n_source*7+1] + jump*np.random.normal()
-        if j==0:        
-            print('-'*20)
-            print("i={0}".format(i))
-            print(source_select)
-            print(jump)        
-            print(samples[j,i,:])
-            print(new_point)
+        #if j==0:        
+        #    print('-'*20)
+        #    print("i={0}".format(i))
+        #    print(source_select)
+        #    print(jump)        
+        #    print(samples[j,i,:])
+        #    print(new_point)
 
         log_acc_ratio = ptas[n_source-1].get_lnlikelihood(new_point)
         log_acc_ratio += ptas[n_source-1].get_lnprior(new_point)
@@ -462,7 +462,7 @@ def regular_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, eig):
         log_acc_ratio += -ptas[n_source-1].get_lnprior(samples[j,i,1:])
 
         acc_ratio = np.exp(log_acc_ratio)**(1/Ts[j])
-        if j==0: print("L-ratio(fisher)={0}".format(acc_ratio))
+        #if j==0: print("L-ratio(fisher)={0}".format(acc_ratio))
         samples[j,i+1,0] = n_source
         #TODO: check if we need the next line (I think samples is already filled with zeros)
         #If not, remove it from here and from other jump functions too
@@ -484,62 +484,49 @@ def regular_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, eig):
 #PARALLEL TEMPERING SWAP JUMP ROUTINE
 #
 ################################################################################
-def do_pt_swap(n_chain, n_source, pta, samples, i, Ts, a_yes, a_no, swap_record):
-    ndim=n_source*7
+def do_pt_swap(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, swap_record):
+    #ndim=n_source*7
     
     swap_chain = np.random.randint(n_chain-1)
+
+    n_source1 = int(np.copy(samples[swap_chain,i,0]))
+    n_source2 = int(np.copy(samples[swap_chain+1,i,0]))
 
     #print("-"*30)
 
     #print(samples[swap_chain,i,1:])
     #print(samples[swap_chain+1,i,1:])
-    #print(pta.get_lnlikelihood(samples[swap_chain+1,i,1:])/Ts[swap_chain]+pta.get_lnprior(samples[swap_chain+1,i,1:])/Ts[swap_chain]-
-    #      pta.get_lnlikelihood(samples[swap_chain,i,1:])/Ts[swap_chain]-pta.get_lnprior(samples[swap_chain,i,1:])/Ts[swap_chain])
 
-    #print(pta.get_lnlikelihood(samples[swap_chain,i,1:])/Ts[swap_chain+1]+pta.get_lnprior(samples[swap_chain,i,1:])/Ts[swap_chain+1]-
-    #      pta.get_lnlikelihood(samples[swap_chain+1,i,1:])/Ts[swap_chain+1]-pta.get_lnprior(samples[swap_chain+1,i,1:])/Ts[swap_chain+1])
+    log_acc_ratio = -ptas[n_source1-1].get_lnlikelihood(samples[swap_chain,i,1:n_source1*7+1]) / Ts[swap_chain]
+    log_acc_ratio += -ptas[n_source1-1].get_lnprior(samples[swap_chain,i,1:n_source1*7+1]) / Ts[swap_chain]
+    log_acc_ratio += -ptas[n_source2-1].get_lnlikelihood(samples[swap_chain+1,i,1:n_source2*7+1]) / Ts[swap_chain+1]
+    log_acc_ratio += -ptas[n_source2-1].get_lnprior(samples[swap_chain+1,i,1:n_source2*7+1]) / Ts[swap_chain+1]
+    log_acc_ratio += ptas[n_source2-1].get_lnlikelihood(samples[swap_chain+1,i,1:n_source2*7+1]) / Ts[swap_chain]
+    log_acc_ratio += ptas[n_source2-1].get_lnprior(samples[swap_chain+1,i,1:n_source2*7+1]) / Ts[swap_chain]
+    log_acc_ratio += ptas[n_source1-1].get_lnlikelihood(samples[swap_chain,i,1:n_source1*7+1]) / Ts[swap_chain+1]
+    log_acc_ratio += ptas[n_source1-1].get_lnprior(samples[swap_chain,i,1:n_source1*7+1]) / Ts[swap_chain+1]
 
-    #print(-pta.get_lnlikelihood(samples[swap_chain,i,1:])/Ts[swap_chain])
-    #print(-pta.get_lnprior(samples[swap_chain,i,1:])/Ts[swap_chain])
-    #print(-pta.get_lnlikelihood(samples[swap_chain+1,i,1:])/Ts[swap_chain+1])
-    #print(-pta.get_lnprior(samples[swap_chain+1,i,1:])/Ts[swap_chain+1])
-    #print(pta.get_lnlikelihood(samples[swap_chain+1,i,1:])/Ts[swap_chain])
-    #print(pta.get_lnprior(samples[swap_chain+1,i,1:])/Ts[swap_chain])
-    #print(pta.get_lnlikelihood(samples[swap_chain,i,1:])/Ts[swap_chain+1])
-    #print(pta.get_lnprior(samples[swap_chain,i,1:])/Ts[swap_chain+1])
-
-    log_acc_ratio = -pta.get_lnlikelihood(samples[swap_chain,i,1:])/Ts[swap_chain]
-    log_acc_ratio += -pta.get_lnprior(samples[swap_chain,i,1:])/Ts[swap_chain]
-    log_acc_ratio += -pta.get_lnlikelihood(samples[swap_chain+1,i,1:])/Ts[swap_chain+1]
-    log_acc_ratio += -pta.get_lnprior(samples[swap_chain+1,i,1:])/Ts[swap_chain+1]
-    log_acc_ratio += pta.get_lnlikelihood(samples[swap_chain+1,i,1:])/Ts[swap_chain]
-    log_acc_ratio += pta.get_lnprior(samples[swap_chain+1,i,1:])/Ts[swap_chain]
-    log_acc_ratio += pta.get_lnlikelihood(samples[swap_chain,i,1:])/Ts[swap_chain+1]
-    log_acc_ratio += pta.get_lnprior(samples[swap_chain,i,1:])/Ts[swap_chain+1]
-
-    samples[:,i+1,0] = n_source
+    #samples[:,i+1,0] = n_source
 
     acc_ratio = np.exp(log_acc_ratio)
-    #print("L-ratio(PT)={0}".format(acc_ratio))
-    #print(swap_chain)
+    print(i)
+    print("L-ratio(PT)={0}".format(acc_ratio))
+    print(n_source1, n_source2)
+    print("Swap: {0}".format(swap_chain))
     if np.random.uniform()<=acc_ratio:
-        #print("Woooow")
+        print("Woooow")
         for j in range(n_chain):
             if j==swap_chain:
-                for k in range(ndim):
-                    samples[j,i+1,k+1] = samples[j+1,i,k+1]
+                samples[j,i+1,:] = samples[j+1,i,:]
             elif j==swap_chain+1:
-                for k in range(ndim):
-                    samples[j,i+1,k+1] = samples[j-1,i,k+1]
+                samples[j,i+1,:] = samples[j-1,i,:]
             else:
-                for k in range(ndim):
-                    samples[j,i+1,k+1] = samples[j,i,k+1]
+                samples[j,i+1,:] = samples[j,i,:]
         a_yes[0]+=1
         swap_record.append(swap_chain)
     else:
         for j in range(n_chain):
-            for k in range(ndim):
-                samples[j,i+1,k+1] = samples[j,i,k+1]
+            samples[j,i+1,:] = samples[j,i,:]
         a_no[0]+=1
 
 ################################################################################
