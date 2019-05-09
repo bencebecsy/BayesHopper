@@ -24,7 +24,7 @@ import enterprise_cw_funcs_from_git as models
 def run_ptmcmc(N, T_max, n_chain, base_model, pulsars, max_n_source=1, RJ_weight=0,
                regular_weight=3, PT_swap_weight=1,
                Fe_proposal_weight=0, fe_file=None, draw_from_prior_weight=0,
-               de_weight=0):
+               de_weight=0, prior_recovery=False):
     #setting up the pta object
     cws = []
     for i in range(max_n_source):
@@ -51,11 +51,20 @@ def run_ptmcmc(N, T_max, n_chain, base_model, pulsars, max_n_source=1, RJ_weight
         model = []
         for p in pulsars:
             model.append(s(p))
-        ptas.append(signal_base.PTA(model))
+        
+        #set the likelihood to unity if we are in prior recovery mode
+        if prior_recovery:
+            ptas.append(get_prior_recovery_pta(signal_base.PTA(model)))
+        else:
+            ptas.append(signal_base.PTA(model))
 
     for i, PTA in enumerate(ptas):
         print(i)
         print(PTA.params)
+        point_to_test = np.tile(np.array([0.0, 0.54, 1.0, -8.0, -13.39, 2.0, 0.5]),i+1)
+        print(point_to_test)
+        print(PTA.get_lnlikelihood(point_to_test))
+        print(PTA.get_lnprior(point_to_test))
         #print(PTA.summary())
 
     #getting the number of dimensions
@@ -227,7 +236,6 @@ def do_rj_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, fe_file
                 fe_new_point = fe[f_idx, hp_idx]
                 if np.random.uniform()<(fe_new_point/fe_limit):
                     accepted = True
-            #if j==0: print("f={0} Hz; (theta,phi)=({1},{2})".format(f_new, gw_theta, gw_phi))
 
             cos_inc = np.cos(inc_max[f_idx, hp_idx]) + 2*alpha*(np.random.uniform()-0.5)
             psi = psi_max[f_idx, hp_idx] + 2*alpha*(np.random.uniform()-0.5)
@@ -237,8 +245,8 @@ def do_rj_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, fe_file
             new_source = np.array([np.cos(gw_theta), cos_inc, gw_phi, np.log10(f_new), log10_h, phase0, psi])
             new_point = np.copy(samples[j,i,1:(n_source+1)*7+1])
             new_point[n_source*7:(n_source+1)*7] = new_source
-            #if j==0: print("Adding")
-            #if j==0: print(samples[j,i,1:n_source*7+1], new_point)
+            if j==0: print("Adding")
+            if j==0: print(samples[j,i,1:n_source*7+1], new_point)
 
             log_acc_ratio = ptas[(n_source+1)-1].get_lnlikelihood(new_point)
             log_acc_ratio += ptas[(n_source+1)-1].get_lnprior(new_point)
@@ -246,9 +254,9 @@ def do_rj_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, fe_file
             log_acc_ratio += -ptas[n_source-1].get_lnprior(samples[j,i,1:n_source*7+1])
 
             acc_ratio = np.exp(log_acc_ratio)**(1/Ts[j])
-            #if j==0: print(acc_ratio)
+            if j==0: print(acc_ratio)
             if np.random.uniform()<=acc_ratio:
-                #if j==0: print("Pafff")
+                if j==0: print("Pafff")
                 samples[j,i+1,0] = n_source+1
                 samples[j,i+1,1:(n_source+1)*7+1] = new_point
             else:
@@ -260,9 +268,9 @@ def do_rj_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, fe_file
             #choose which source to remove
             remove_index = np.random.randint(n_source)
             new_point = np.delete(samples[j,i,1:n_source*7+1], range(remove_index*7,(remove_index+1)*7))
-            #if j==0: print("Removing")
-            #if j==0: print(remove_index)
-            #if j==0: print(samples[j,i,1:n_source*7+1], new_point)
+            if j==0: print("Removing")
+            if j==0: print(remove_index)
+            if j==0: print(samples[j,i,1:n_source*7+1], new_point)
             
             log_acc_ratio = ptas[(n_source-1)-1].get_lnlikelihood(new_point)
             log_acc_ratio += ptas[(n_source-1)-1].get_lnprior(new_point)
@@ -270,9 +278,9 @@ def do_rj_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, fe_file
             log_acc_ratio += -ptas[n_source-1].get_lnprior(samples[j,i,1:n_source*7+1])
             
             acc_ratio = np.exp(log_acc_ratio)**(1/Ts[j])
-            #if j==0: print(acc_ratio)
+            if j==0: print(acc_ratio)
             if np.random.uniform()<=acc_ratio:
-                #if j==0: print("Wuuuuuh")
+                if j==0: print("Wuuuuuh")
                 samples[j,i+1,0] = n_source-1
                 samples[j,i+1,1:(n_source-1)*7+1] = new_point
             else:
@@ -771,4 +779,21 @@ def make_fe_global_proposal(fe_func, f_min=1e-9, f_max=1e-7, n_freq=400,
     else:
         return freqs, m
 
+################################################################################
+#
+#MAKE PTA OBJECT FOR PRIOR RECOVERY
+#
+################################################################################
+
+def get_prior_recovery_pta(pta):
+    class prior_recovery_pta:
+        def __init__(self, pta):
+            self.pta = pta
+            self.params = pta.params
+        def get_lnlikelihood(self, x):
+            return 0.0
+        def get_lnprior(self, x):
+            return self.pta.get_lnprior(x)
+        
+    return prior_recovery_pta(pta)
 
