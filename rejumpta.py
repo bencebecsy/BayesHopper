@@ -109,8 +109,8 @@ def run_ptmcmc(N, T_max, n_chain, base_model, pulsars, max_n_source=1, RJ_weight
     print(samples[0,0,:])
 
     #setting up arrays to record acceptance and swaps
-    a_yes=np.zeros(n_chain+1)
-    a_no=np.zeros(n_chain+1)
+    a_yes=np.zeros(n_chain+2)
+    a_no=np.zeros(n_chain+2)
     swap_record=[]
 
     #set up probabilities of different proposals
@@ -137,8 +137,8 @@ Draw from prior: {3:.2f}%\nDifferential evolution jump: {4:.2f}%".format(swap_pr
         if i%n_status_update==0:
             acc_fraction = a_yes/(a_no+a_yes)
             print('Progress: {0:2.2f}% '.format(i/N*100) +
-                  'Acceptance fraction (swap, each chain): ({0:1.2f} '.format(acc_fraction[0]) +
-                  ' '.join([',{{{}:1.2f}}'.format(i) for i in range(n_chain)]).format(*acc_fraction[1:]) +
+                  'Acceptance fraction (RJ, swap, each chain): ({0:1.2f}, {1:1.2f}, '.format(acc_fraction[0], acc_fraction[1]) +
+                  ', '.join(['{{{}:1.2f}}'.format(i) for i in range(n_chain)]).format(*acc_fraction[2:]) +
                   ')' + '\r',end='')
         #update our eigenvectors from the fisher matrix every 100 iterations
         if i%n_fish_update==0 and i>=n_global_first:
@@ -283,9 +283,11 @@ def do_rj_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, fe_file
                 if j==0: print("Wuuuuuh")
                 samples[j,i+1,0] = n_source-1
                 samples[j,i+1,1:(n_source-1)*7+1] = new_point
+                a_yes[0] += 1
             else:
                 samples[j,i+1,0] = n_source
                 samples[j,i+1,1:n_source*7+1] = samples[j,i,1:n_source*7+1]
+                a_no[0] += 1
 
         else: #we selected adding when we are at max_n_source or removing the only signal we have, so we will just skip this step
             #if j==0: print("Skippy")
@@ -332,11 +334,11 @@ def do_de_jump(n_chain, n_source, pta, samples, i, Ts, a_yes, a_no, de_history):
         if np.random.uniform()<=acc_ratio:
             for k in range(ndim):
                 samples[j,i+1,k] = new_point[k]
-            a_yes[j+1]+=1
+            a_yes[j+2]+=1
         else:
             for k in range(ndim):
                 samples[j,i+1,k] = samples[j,i,k]
-            a_no[j+1]+=1
+            a_no[j+2]+=1
 
 
 ################################################################################
@@ -363,11 +365,11 @@ def do_draw_from_prior_move(n_chain, n_source, pta, samples, i, Ts, a_yes, a_no)
         if np.random.uniform()<=acc_ratio:
             for k in range(ndim):
                 samples[j,i+1,k+1] = new_point[k]
-            a_yes[j+1]+=1
+            a_yes[j+2]+=1
         else:
             for k in range(ndim):
                 samples[j,i+1,k+1] = samples[j,i,k+1]
-            a_no[j+1]+=1
+            a_no[j+2]+=1
 
 ################################################################################
 #
@@ -539,10 +541,10 @@ def do_fe_global_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, 
             #    print('yeeeh')
             #    if not deterministic: print('Ohh jeez')
             samples[j,i+1,1:n_source*7+1] = new_point
-            a_yes[j+1]+=1
+            a_yes[j+2]+=1
         else:
             samples[j,i+1,1:n_source*7+1] = samples[j,i,1:n_source*7+1]
-            a_no[j+1]+=1
+            a_no[j+2]+=1
     
 
 ################################################################################
@@ -587,12 +589,12 @@ def regular_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, eig):
             samples[j,i+1,1:n_source*7+1] = new_point
             #for k in range(ndim):
             #    samples[j,i+1,k+1] = new_point[k]
-            a_yes[j+1]+=1
+            a_yes[j+2]+=1
         else:
             samples[j,i+1,1:n_source*7+1] = samples[j,i,1:n_source*7+1]
             #for k in range(ndim):
             #    samples[j,i+1,k+1] = samples[j,i,k+1]
-            a_no[j+1]+=1
+            a_no[j+2]+=1
 
 ################################################################################
 #
@@ -637,12 +639,12 @@ def do_pt_swap(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, swap_re
                 samples[j,i+1,:] = samples[j-1,i,:]
             else:
                 samples[j,i+1,:] = samples[j,i,:]
-        a_yes[0]+=1
+        a_yes[1]+=1
         swap_record.append(swap_chain)
     else:
         for j in range(n_chain):
             samples[j,i+1,:] = samples[j,i,:]
-        a_no[0]+=1
+        a_no[1]+=1
 
 ################################################################################
 #
