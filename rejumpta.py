@@ -21,7 +21,8 @@ import enterprise_cw_funcs_from_git as models
 #
 ################################################################################
 
-def run_ptmcmc(N, T_max, n_chain, base_model, pulsars, max_n_source=1, regular_weight=3, PT_swap_weight=1,
+def run_ptmcmc(N, T_max, n_chain, base_model, pulsars, max_n_source=1, RJ_weight=0,
+               regular_weight=3, PT_swap_weight=1,
                Fe_proposal_weight=0, fe_file=None, draw_from_prior_weight=0,
                de_weight=0):
     #setting up the pta object
@@ -105,17 +106,18 @@ def run_ptmcmc(N, T_max, n_chain, base_model, pulsars, max_n_source=1, regular_w
 
     #set up probabilities of different proposals
     total_weight = (regular_weight + PT_swap_weight + Fe_proposal_weight + 
-                    draw_from_prior_weight + de_weight)
+                    draw_from_prior_weight + de_weight + RJ_weight)
     swap_probability = PT_swap_weight/total_weight
     fe_proposal_probability = Fe_proposal_weight/total_weight
     regular_probability = regular_weight/total_weight
     draw_from_prior_probability = draw_from_prior_weight/total_weight
     de_probability = de_weight/total_weight
-    print("Percentage of steps doing different jumps:\nPT swaps: {0:.2f}%\n\
+    RJ_probability = RJ_weight/total_weight
+    print("Percentage of steps doing different jumps:\nPT swaps: {0:.2f}%\nRJ moves: {5:.2f}%\n\
 Fe-proposals: {1:.2f}%\nJumps along Fisher eigendirections: {2:.2f}%\n\
 Draw from prior: {3:.2f}%\nDifferential evolution jump: {4:.2f}%".format(swap_probability*100,
           fe_proposal_probability*100, regular_probability*100, draw_from_prior_probability*100,
-          de_probability*100))
+          de_probability*100, RJ_probability*100))
 
     for i in range(int(N-1)):
         #add current sample to DE history
@@ -169,6 +171,10 @@ Draw from prior: {3:.2f}%\nDifferential evolution jump: {4:.2f}%".format(swap_pr
             elif (jump_decide<swap_probability+fe_proposal_probability+
                  draw_from_prior_probability+de_probability and i>=de_start_iter):
                 do_de_jump(n_chain, ndim, pta, samples, i, Ts, a_yes, a_no, de_history)
+            #do RJ move
+            elif (jump_decide<swap_probability+fe_proposal_probability+
+                 draw_from_prior_probability+de_probability+RJ_probability):
+                do_rj_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, fe_file)
             #regular step
             else:
                 #print("fisher")
@@ -176,6 +182,107 @@ Draw from prior: {3:.2f}%\nDifferential evolution jump: {4:.2f}%".format(swap_pr
             #print(samples[0,i,:])
     acc_fraction = a_yes/(a_no+a_yes)
     return samples, acc_fraction, swap_record
+
+
+################################################################################
+#
+#REVERSIBLE-JUMP (RJ, aka TRANS-DIMENSIONAL) MOVE
+#
+################################################################################
+def do_rj_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, fe_file):
+    for j in range(n_chain):
+        n_source = int(np.copy(samples[j,i,0]))
+        
+        add_prob = 0.5 #flat prior on n_source-->same propability of addind and removing
+        #decide if we add or remove a signal
+        direction_decide = np.random.uniform()
+        if direction_decide<add_prob and n_source!=max_n_source: #adding a signal------------------------------------------------------
+            if fe_file==None:
+                raise Exception("Fe-statistics data file is needed for Fe global propsals")
+            npzfile = np.load(fe_file)
+            freqs = npzfile['freqs']
+            fe = npzfile['fe']
+            inc_max = npzfile['inc_max']
+            psi_max = npzfile['psi_max']
+            phase0_max = npzfile['phase0_max']
+            h_max = npzfile['h_max']
+   
+            alpha = 0.1
+ 
+            #set limit used for rejection sampling below
+            fe_limit = np.max(fe)
+            #if the max is too high, cap it at Fe=200 (Neil's trick to not to be too restrictive)
+            #if fe_limit>200:
+            #    fe_limit=200
+    
+            accepted = False
+            while accepted==False:
+                f_new = 10**(ptas[-1].params[3].sample())
+                f_idx = (np.abs(freqs - f_new)).argmin()
+
+                gw_theta = np.arccos(ptas[-1].params[0].sample())
+                gw_phi = ptas[-1].params[2].sample()
+                hp_idx = hp.ang2pix(hp.get_nside(fe), gw_theta, gw_phi)
+
+                fe_new_point = fe[f_idx, hp_idx]
+                if np.random.uniform()<(fe_new_point/fe_limit):
+                    accepted = True
+            #if j==0: print("f={0} Hz; (theta,phi)=({1},{2})".format(f_new, gw_theta, gw_phi))
+
+            cos_inc = np.cos(inc_max[f_idx, hp_idx]) + 2*alpha*(np.random.uniform()-0.5)
+            psi = psi_max[f_idx, hp_idx] + 2*alpha*(np.random.uniform()-0.5)
+            phase0 = phase0_max[f_idx, hp_idx] + 2*alpha*(np.random.uniform()-0.5)
+            log10_h = np.log10(h_max[f_idx, hp_idx]) + 2*alpha*(np.random.uniform()-0.5)
+
+            new_source = np.array([np.cos(gw_theta), cos_inc, gw_phi, np.log10(f_new), log10_h, phase0, psi])
+            new_point = np.copy(samples[j,i,1:(n_source+1)*7+1])
+            new_point[n_source*7:(n_source+1)*7] = new_source
+            if j==0: print("Adding")
+            if j==0: print(samples[j,i,1:n_source*7+1], new_point)
+
+            log_acc_ratio = ptas[(n_source+1)-1].get_lnlikelihood(new_point)
+            log_acc_ratio += ptas[(n_source+1)-1].get_lnprior(new_point)
+            log_acc_ratio += -ptas[n_source-1].get_lnlikelihood(samples[j,i,1:n_source*7+1])
+            log_acc_ratio += -ptas[n_source-1].get_lnprior(samples[j,i,1:n_source*7+1])
+
+            acc_ratio = np.exp(log_acc_ratio)**(1/Ts[j])
+            if j==0: print(acc_ratio)
+            if np.random.uniform()<=acc_ratio:
+                if j==0: print("Pafff")
+                samples[j,i+1,0] = n_source+1
+                samples[j,i+1,1:(n_source+1)*7+1] = new_point
+            else:
+                samples[j,i+1,0] = n_source
+                samples[j,i+1,1:n_source*7+1] = samples[j,i,1:n_source*7+1]
+
+           
+        elif direction_decide>add_prob and n_source!=1:   #removing a signal----------------------------------------------------------
+            #choose which source to remove
+            remove_index = np.random.randint(n_source)
+            new_point = np.delete(samples[j,i,1:n_source*7+1], range(remove_index*7,(remove_index+1)*7))
+            if j==0: print("Removing")
+            if j==0: print(remove_index)
+            if j==0: print(samples[j,i,1:n_source*7+1], new_point)
+            
+            log_acc_ratio = ptas[(n_source-1)-1].get_lnlikelihood(new_point)
+            log_acc_ratio += ptas[(n_source-1)-1].get_lnprior(new_point)
+            log_acc_ratio += -ptas[n_source-1].get_lnlikelihood(samples[j,i,1:n_source*7+1])
+            log_acc_ratio += -ptas[n_source-1].get_lnprior(samples[j,i,1:n_source*7+1])
+            
+            acc_ratio = np.exp(log_acc_ratio)**(1/Ts[j])
+            if j==0: print(acc_ratio)
+            if np.random.uniform()<=acc_ratio:
+                if j==0: print("Wuuuuuh")
+                samples[j,i+1,0] = n_source-1
+                samples[j,i+1,1:(n_source-1)*7+1] = new_point
+            else:
+                samples[j,i+1,0] = n_source
+                samples[j,i+1,1:n_source*7+1] = samples[j,i,1:n_source*7+1]
+
+        else: #we selected adding when we are at max_n_source or removing the only signal we have, so we will just skip this step
+            if j==0: print("Skippy")
+            samples[j,i+1,:] = samples[j,i,:]
+         
 
 ################################################################################
 #
@@ -509,12 +616,12 @@ def do_pt_swap(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, swap_re
     #samples[:,i+1,0] = n_source
 
     acc_ratio = np.exp(log_acc_ratio)
-    print(i)
-    print("L-ratio(PT)={0}".format(acc_ratio))
-    print(n_source1, n_source2)
-    print("Swap: {0}".format(swap_chain))
+    #print(i)
+    #print("L-ratio(PT)={0}".format(acc_ratio))
+    #print(n_source1, n_source2)
+    #print("Swap: {0}".format(swap_chain))
     if np.random.uniform()<=acc_ratio:
-        print("Woooow")
+        #print("Woooow")
         for j in range(n_chain):
             if j==swap_chain:
                 samples[j,i+1,:] = samples[j+1,i,:]
