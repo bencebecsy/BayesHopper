@@ -805,12 +805,11 @@ def get_prior_recovery_pta(pta):
 #
 ################################################################################
 
-def transdim_postprocess(samples, separation_method='freq'):
+def transdim_postprocess(samples, separation_method='freq', f_tol=0.05):
     max_n_source = int(np.max(samples[:,0]))
     N = samples.shape[0]
     
     if separation_method=='freq':
-        f_tol = 0.05
         freqs = []
         sample_dict = {}
         for i in range(N):
