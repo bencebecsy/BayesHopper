@@ -62,9 +62,9 @@ def run_ptmcmc(N, T_max, n_chain, base_model, pulsars, max_n_source=1, RJ_weight
         print(i)
         print(PTA.params)
         point_to_test = np.tile(np.array([0.0, 0.54, 1.0, -8.0, -13.39, 2.0, 0.5]),i+1)
-        print(point_to_test)
-        print(PTA.get_lnlikelihood(point_to_test))
-        print(PTA.get_lnprior(point_to_test))
+        #print(point_to_test)
+        #print(PTA.get_lnlikelihood(point_to_test))
+        #print(PTA.get_lnprior(point_to_test))
         #print(PTA.summary())
 
     #getting the number of dimensions
@@ -245,8 +245,8 @@ def do_rj_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, fe_file
             new_source = np.array([np.cos(gw_theta), cos_inc, gw_phi, np.log10(f_new), log10_h, phase0, psi])
             new_point = np.copy(samples[j,i,1:(n_source+1)*7+1])
             new_point[n_source*7:(n_source+1)*7] = new_source
-            if j==0: print("Adding")
-            if j==0: print(samples[j,i,1:n_source*7+1], new_point)
+            #if j==0: print("Adding")
+            #if j==0: print(samples[j,i,1:n_source*7+1], new_point)
 
             log_acc_ratio = ptas[(n_source+1)-1].get_lnlikelihood(new_point)
             log_acc_ratio += ptas[(n_source+1)-1].get_lnprior(new_point)
@@ -254,9 +254,9 @@ def do_rj_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, fe_file
             log_acc_ratio += -ptas[n_source-1].get_lnprior(samples[j,i,1:n_source*7+1])
 
             acc_ratio = np.exp(log_acc_ratio)**(1/Ts[j])
-            if j==0: print(acc_ratio)
+            #if j==0: print(acc_ratio)
             if np.random.uniform()<=acc_ratio:
-                if j==0: print("Pafff")
+                #if j==0: print("Pafff")
                 samples[j,i+1,0] = n_source+1
                 samples[j,i+1,1:(n_source+1)*7+1] = new_point
             else:
@@ -268,9 +268,9 @@ def do_rj_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, fe_file
             #choose which source to remove
             remove_index = np.random.randint(n_source)
             new_point = np.delete(samples[j,i,1:n_source*7+1], range(remove_index*7,(remove_index+1)*7))
-            if j==0: print("Removing")
-            if j==0: print(remove_index)
-            if j==0: print(samples[j,i,1:n_source*7+1], new_point)
+            #if j==0: print("Removing")
+            #if j==0: print(remove_index)
+            #if j==0: print(samples[j,i,1:n_source*7+1], new_point)
             
             log_acc_ratio = ptas[(n_source-1)-1].get_lnlikelihood(new_point)
             log_acc_ratio += ptas[(n_source-1)-1].get_lnprior(new_point)
@@ -278,9 +278,9 @@ def do_rj_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, fe_file
             log_acc_ratio += -ptas[n_source-1].get_lnprior(samples[j,i,1:n_source*7+1])
             
             acc_ratio = np.exp(log_acc_ratio)**(1/Ts[j])
-            if j==0: print(acc_ratio)
+            #if j==0: print(acc_ratio)
             if np.random.uniform()<=acc_ratio:
-                if j==0: print("Wuuuuuh")
+                #if j==0: print("Wuuuuuh")
                 samples[j,i+1,0] = n_source-1
                 samples[j,i+1,1:(n_source-1)*7+1] = new_point
                 a_yes[0] += 1
