@@ -799,3 +799,38 @@ def get_prior_recovery_pta(pta):
         
     return prior_recovery_pta(pta)
 
+################################################################################
+#
+#POSTPROCESSING FOR TRANS-DIMENSIONAL RUNS
+#
+################################################################################
+
+def transdim_postprocess(samples, separation_method='freq'):
+    max_n_source = int(np.max(samples[:,0]))
+    N = samples.shape[0]
+    
+    if separation_method=='freq':
+        f_tol = 0.05
+        freqs = []
+        sample_dict = {}
+        for i in range(N):
+            for j,f in enumerate(samples[i,4::7]):
+                if not np.isnan(f):
+                    new = True
+                    for idx, freq in enumerate(freqs):
+                        if np.abs(f-freq)<f_tol:
+                            new = False
+                            freq_idx = idx
+                    if new:
+                        freqs.append(f)
+                        sample_dict[len(freqs)-1] = np.array([list(samples[i,1+7*j:1+7*(j+1)]),])
+                    else:
+                        sample_dict[freq_idx] = np.append(sample_dict[freq_idx], np.array([list(samples[i,1+7*j:1+7*(j+1)]),]), axis=0)                 
+    elif separation_method=='match':
+        print("Not implemented yet")
+    else:
+        print("Not understood separation method: {0}".format(separation_method))
+    
+    return sample_dict
+
+
