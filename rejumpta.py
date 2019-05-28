@@ -237,10 +237,18 @@ def do_rj_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, fe_file
                 if np.random.uniform()<(fe_new_point/fe_limit):
                     accepted = True
 
-            cos_inc = np.cos(inc_max[f_idx, hp_idx]) + 2*alpha*(np.random.uniform()-0.5)
-            psi = psi_max[f_idx, hp_idx] + 2*alpha*(np.random.uniform()-0.5)
-            phase0 = phase0_max[f_idx, hp_idx] + 2*alpha*(np.random.uniform()-0.5)
-            log10_h = np.log10(h_max[f_idx, hp_idx]) + 2*alpha*(np.random.uniform()-0.5)
+            cos_inc = ptas[-1].params[1].sample()
+            psi = ptas[-1].params[6].sample()
+            phase0 = ptas[-1].params[5].sample()
+            log10_h = ptas[-1].params[4].sample()
+            
+            prior_ext = (ptas[-1].params[1].get_pdf(cos_inc) * ptas[-1].params[6].get_pdf(psi) *
+                         ptas[-1].params[5].get_pdf(phase0) * ptas[-1].params[4].get_pdf(log10_h))
+            
+            #cos_inc = np.cos(inc_max[f_idx, hp_idx]) + 2*alpha*(np.random.uniform()-0.5)
+            #psi = psi_max[f_idx, hp_idx] + 2*alpha*(np.random.uniform()-0.5)
+            #phase0 = phase0_max[f_idx, hp_idx] + 2*alpha*(np.random.uniform()-0.5)
+            #log10_h = np.log10(h_max[f_idx, hp_idx]) + 2*alpha*(np.random.uniform()-0.5)
 
             new_source = np.array([np.cos(gw_theta), cos_inc, gw_phi, np.log10(f_new), log10_h, phase0, psi])
             new_point = np.copy(samples[j,i,1:(n_source+1)*7+1])
@@ -253,7 +261,13 @@ def do_rj_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, fe_file
             log_acc_ratio += -ptas[n_source-1].get_lnlikelihood(samples[j,i,1:n_source*7+1])
             log_acc_ratio += -ptas[n_source-1].get_lnprior(samples[j,i,1:n_source*7+1])
 
-            acc_ratio = np.exp(log_acc_ratio)**(1/Ts[j])
+            healpy_pixel_area = hp.nside2pixarea(hp.get_nside(fe))
+            log10f_resolution = np.diff(np.log10(freqs))[0]
+            norm = np.sum(fe)*healpy_pixel_area*log10f_resolution
+
+            fe_new_point_normalized = fe_new_point/norm
+
+            acc_ratio = np.exp(log_acc_ratio)**(1/Ts[j])/prior_ext/fe_new_point_normalized
             #if j==0: print(acc_ratio)
             if np.random.uniform()<=acc_ratio:
                 #if j==0: print("Pafff")
@@ -265,6 +279,16 @@ def do_rj_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, fe_file
 
            
         elif direction_decide>add_prob and n_source!=1:   #removing a signal----------------------------------------------------------
+            if fe_file==None:
+                raise Exception("Fe-statistics data file is needed for Fe global propsals")
+            npzfile = np.load(fe_file)
+            freqs = npzfile['freqs']
+            fe = npzfile['fe']
+            inc_max = npzfile['inc_max']
+            psi_max = npzfile['psi_max']
+            phase0_max = npzfile['phase0_max']
+            h_max = npzfile['h_max']
+
             #choose which source to remove
             remove_index = np.random.randint(n_source)
             new_point = np.delete(samples[j,i,1:n_source*7+1], range(remove_index*7,(remove_index+1)*7))
@@ -277,7 +301,29 @@ def do_rj_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, fe_file
             log_acc_ratio += -ptas[n_source-1].get_lnlikelihood(samples[j,i,1:n_source*7+1])
             log_acc_ratio += -ptas[n_source-1].get_lnprior(samples[j,i,1:n_source*7+1])
             
-            acc_ratio = np.exp(log_acc_ratio)**(1/Ts[j])
+            f_old = 10**samples[j,i,1+remove_index*7+3]
+            f_idx_old = (np.abs(freqs - f_old)).argmin()
+
+            gw_theta_old = np.arccos(samples[j,i,1+remove_index*7+0])
+            gw_phi_old = samples[j,i,1+remove_index*7+2]
+            hp_idx_old = hp.ang2pix(hp.get_nside(fe), gw_theta_old, gw_phi_old)
+
+            fe_old_point = fe[f_idx_old, hp_idx_old]
+            healpy_pixel_area = hp.nside2pixarea(hp.get_nside(fe))
+            log10f_resolution = np.diff(np.log10(freqs))[0]
+            norm = np.sum(fe)*healpy_pixel_area*log10f_resolution
+            
+            fe_old_point_normalized = fe_old_point/norm
+
+            cos_inc = samples[j,i,1+remove_index*7+1]
+            psi = samples[j,i,1+remove_index*7+6]
+            phase0 = samples[j,i,1+remove_index*7+5]
+            log10_h = samples[j,i,1+remove_index*7+4]
+
+            prior_ext = (ptas[-1].params[1].get_pdf(cos_inc) * ptas[-1].params[6].get_pdf(psi) *
+                         ptas[-1].params[5].get_pdf(phase0) * ptas[-1].params[4].get_pdf(log10_h))
+
+            acc_ratio = np.exp(log_acc_ratio)**(1/Ts[j])*fe_old_point_normalized*prior_ext
             #if j==0: print(acc_ratio)
             if np.random.uniform()<=acc_ratio:
                 #if j==0: print("Wuuuuuh")
