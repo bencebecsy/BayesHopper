@@ -256,9 +256,9 @@ def do_rj_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, fe_file
             #if j==0: print("Adding")
             #if j==0: print(samples[j,i,1:n_source*7+1], new_point)
 
-            log_acc_ratio = ptas[(n_source+1)-1].get_lnlikelihood(new_point)
+            log_acc_ratio = ptas[(n_source+1)-1].get_lnlikelihood(new_point)/Ts[j]
             log_acc_ratio += ptas[(n_source+1)-1].get_lnprior(new_point)
-            log_acc_ratio += -ptas[n_source-1].get_lnlikelihood(samples[j,i,1:n_source*7+1])
+            log_acc_ratio += -ptas[n_source-1].get_lnlikelihood(samples[j,i,1:n_source*7+1])/Ts[j]
             log_acc_ratio += -ptas[n_source-1].get_lnprior(samples[j,i,1:n_source*7+1])
 
             healpy_pixel_area = hp.nside2pixarea(hp.get_nside(fe))
@@ -267,7 +267,7 @@ def do_rj_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, fe_file
 
             fe_new_point_normalized = fe_new_point/norm
 
-            acc_ratio = np.exp(log_acc_ratio)**(1/Ts[j])/prior_ext/fe_new_point_normalized
+            acc_ratio = np.exp(log_acc_ratio)/prior_ext/fe_new_point_normalized
             #correction close to edge based on eqs. (40) and (41) of Sambridge et al. Geophys J. Int. (2006) 167, 528-542
             if n_source==1:
                 acc_ratio *= 0.5
@@ -301,9 +301,9 @@ def do_rj_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, fe_file
             #if j==0: print(remove_index)
             #if j==0: print(samples[j,i,1:n_source*7+1], new_point)
             
-            log_acc_ratio = ptas[(n_source-1)-1].get_lnlikelihood(new_point)
+            log_acc_ratio = ptas[(n_source-1)-1].get_lnlikelihood(new_point)/Ts[j]
             log_acc_ratio += ptas[(n_source-1)-1].get_lnprior(new_point)
-            log_acc_ratio += -ptas[n_source-1].get_lnlikelihood(samples[j,i,1:n_source*7+1])
+            log_acc_ratio += -ptas[n_source-1].get_lnlikelihood(samples[j,i,1:n_source*7+1])/Ts[j]
             log_acc_ratio += -ptas[n_source-1].get_lnprior(samples[j,i,1:n_source*7+1])
             
             f_old = 10**samples[j,i,1+remove_index*7+3]
@@ -328,7 +328,7 @@ def do_rj_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, fe_file
             prior_ext = (ptas[-1].params[1].get_pdf(cos_inc) * ptas[-1].params[6].get_pdf(psi) *
                          ptas[-1].params[5].get_pdf(phase0) * ptas[-1].params[4].get_pdf(log10_h))
 
-            acc_ratio = np.exp(log_acc_ratio)**(1/Ts[j])*fe_old_point_normalized*prior_ext
+            acc_ratio = np.exp(log_acc_ratio)*fe_old_point_normalized*prior_ext
             #correction close to edge based on eqs. (40) and (41) of Sambridge et al. Geophys J. Int. (2006) 167, 528-542
             if n_source==2:
                 acc_ratio *= 2.0
@@ -666,13 +666,13 @@ def do_pt_swap(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, swap_re
     #print(samples[swap_chain+1,i,1:])
 
     log_acc_ratio = -ptas[n_source1-1].get_lnlikelihood(samples[swap_chain,i,1:n_source1*7+1]) / Ts[swap_chain]
-    log_acc_ratio += -ptas[n_source1-1].get_lnprior(samples[swap_chain,i,1:n_source1*7+1]) / Ts[swap_chain]
+    log_acc_ratio += -ptas[n_source1-1].get_lnprior(samples[swap_chain,i,1:n_source1*7+1])
     log_acc_ratio += -ptas[n_source2-1].get_lnlikelihood(samples[swap_chain+1,i,1:n_source2*7+1]) / Ts[swap_chain+1]
-    log_acc_ratio += -ptas[n_source2-1].get_lnprior(samples[swap_chain+1,i,1:n_source2*7+1]) / Ts[swap_chain+1]
+    log_acc_ratio += -ptas[n_source2-1].get_lnprior(samples[swap_chain+1,i,1:n_source2*7+1])
     log_acc_ratio += ptas[n_source2-1].get_lnlikelihood(samples[swap_chain+1,i,1:n_source2*7+1]) / Ts[swap_chain]
-    log_acc_ratio += ptas[n_source2-1].get_lnprior(samples[swap_chain+1,i,1:n_source2*7+1]) / Ts[swap_chain]
+    log_acc_ratio += ptas[n_source2-1].get_lnprior(samples[swap_chain+1,i,1:n_source2*7+1])
     log_acc_ratio += ptas[n_source1-1].get_lnlikelihood(samples[swap_chain,i,1:n_source1*7+1]) / Ts[swap_chain+1]
-    log_acc_ratio += ptas[n_source1-1].get_lnprior(samples[swap_chain,i,1:n_source1*7+1]) / Ts[swap_chain+1]
+    log_acc_ratio += ptas[n_source1-1].get_lnprior(samples[swap_chain,i,1:n_source1*7+1])
 
     #samples[:,i+1,0] = n_source
 
