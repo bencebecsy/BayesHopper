@@ -205,7 +205,7 @@ def do_rj_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, fe_file
         add_prob = 0.5 #flat prior on n_source-->same propability of addind and removing
         #decide if we add or remove a signal
         direction_decide = np.random.uniform()
-        if direction_decide<add_prob and n_source!=max_n_source: #adding a signal------------------------------------------------------
+        if n_source==1 or (direction_decide<add_prob and n_source!=max_n_source): #adding a signal------------------------------------------------------
             if fe_file==None:
                 raise Exception("Fe-statistics data file is needed for Fe global propsals")
             npzfile = np.load(fe_file)
@@ -268,6 +268,11 @@ def do_rj_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, fe_file
             fe_new_point_normalized = fe_new_point/norm
 
             acc_ratio = np.exp(log_acc_ratio)**(1/Ts[j])/prior_ext/fe_new_point_normalized
+            #correction close to edge based on eqs. (40) and (41) of Sambridge et al. Geophys J. Int. (2006) 167, 528-542
+            if n_source==1:
+                acc_ratio *= 0.5
+            elif n_source==max_n_source-1:
+                acc_ratio *= 2.0
             #if j==0: print(acc_ratio)
             if np.random.uniform()<=acc_ratio:
                 #if j==0: print("Pafff")
@@ -278,7 +283,7 @@ def do_rj_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, fe_file
                 samples[j,i+1,1:n_source*7+1] = samples[j,i,1:n_source*7+1]
 
            
-        elif direction_decide>add_prob and n_source!=1:   #removing a signal----------------------------------------------------------
+        elif n_source==max_n_source or (direction_decide>add_prob and n_source!=1):   #removing a signal----------------------------------------------------------
             if fe_file==None:
                 raise Exception("Fe-statistics data file is needed for Fe global propsals")
             npzfile = np.load(fe_file)
@@ -324,6 +329,11 @@ def do_rj_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, fe_file
                          ptas[-1].params[5].get_pdf(phase0) * ptas[-1].params[4].get_pdf(log10_h))
 
             acc_ratio = np.exp(log_acc_ratio)**(1/Ts[j])*fe_old_point_normalized*prior_ext
+            #correction close to edge based on eqs. (40) and (41) of Sambridge et al. Geophys J. Int. (2006) 167, 528-542
+            if n_source==2:
+                acc_ratio *= 2.0
+            elif n_source==max_n_source:
+                acc_ratio *= 0.5
             #if j==0: print(acc_ratio)
             if np.random.uniform()<=acc_ratio:
                 #if j==0: print("Wuuuuuh")
@@ -334,11 +344,6 @@ def do_rj_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, fe_file
                 samples[j,i+1,0] = n_source
                 samples[j,i+1,1:n_source*7+1] = samples[j,i,1:n_source*7+1]
                 a_no[0] += 1
-
-        else: #we selected adding when we are at max_n_source or removing the only signal we have, so we will just skip this step
-            #if j==0: print("Skippy")
-            samples[j,i+1,:] = samples[j,i,:]
-         
 
 ################################################################################
 #
