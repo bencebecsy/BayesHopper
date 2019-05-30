@@ -226,8 +226,8 @@ def do_rj_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, fe_file
     
             accepted = False
             while accepted==False:
-                f_new = 10**(ptas[-1].params[3].sample())
-                f_idx = (np.abs(freqs - f_new)).argmin()
+                log_f_new = ptas[-1].params[3].sample()
+                f_idx = (np.abs(np.log10(freqs) - log_f_new)).argmin()
 
                 gw_theta = np.arccos(ptas[-1].params[0].sample())
                 gw_phi = ptas[-1].params[2].sample()
@@ -250,7 +250,7 @@ def do_rj_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, fe_file
             #phase0 = phase0_max[f_idx, hp_idx] + 2*alpha*(np.random.uniform()-0.5)
             #log10_h = np.log10(h_max[f_idx, hp_idx]) + 2*alpha*(np.random.uniform()-0.5)
 
-            new_source = np.array([np.cos(gw_theta), cos_inc, gw_phi, np.log10(f_new), log10_h, phase0, psi])
+            new_source = np.array([np.cos(gw_theta), cos_inc, gw_phi, log_f_new, log10_h, phase0, psi])
             new_point = np.copy(samples[j,i,1:(n_source+1)*7+1])
             new_point[n_source*7:(n_source+1)*7] = new_source
             #if j==0: print("Adding")
@@ -265,6 +265,7 @@ def do_rj_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, fe_file
             log10f_resolution = np.diff(np.log10(freqs))[0]
             norm = np.sum(fe)*healpy_pixel_area*log10f_resolution
 
+            #normalization
             fe_new_point_normalized = fe_new_point/norm
 
             acc_ratio = np.exp(log_acc_ratio)/prior_ext/fe_new_point_normalized
@@ -306,8 +307,8 @@ def do_rj_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, fe_file
             log_acc_ratio += -ptas[n_source-1].get_lnlikelihood(samples[j,i,1:n_source*7+1])/Ts[j]
             log_acc_ratio += -ptas[n_source-1].get_lnprior(samples[j,i,1:n_source*7+1])
             
-            f_old = 10**samples[j,i,1+remove_index*7+3]
-            f_idx_old = (np.abs(freqs - f_old)).argmin()
+            log_f_old = samples[j,i,1+remove_index*7+3]
+            f_idx_old = (np.abs(np.log10(freqs) - log_f_old)).argmin()
 
             gw_theta_old = np.arccos(samples[j,i,1+remove_index*7+0])
             gw_phi_old = samples[j,i,1+remove_index*7+2]
@@ -318,6 +319,7 @@ def do_rj_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, fe_file
             log10f_resolution = np.diff(np.log10(freqs))[0]
             norm = np.sum(fe)*healpy_pixel_area*log10f_resolution
             
+            #normalization
             fe_old_point_normalized = fe_old_point/norm
 
             cos_inc = samples[j,i,1+remove_index*7+1]
