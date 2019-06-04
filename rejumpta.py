@@ -264,16 +264,20 @@ def do_rj_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, fe_file
             healpy_pixel_area = hp.nside2pixarea(hp.get_nside(fe))
             log10f_resolution = np.diff(np.log10(freqs))[0]
             norm = np.sum(fe)*healpy_pixel_area*log10f_resolution
+            #short-term hacky solution
+            norm *= 399/400
+
 
             #normalization
             fe_new_point_normalized = fe_new_point/norm
 
             acc_ratio = np.exp(log_acc_ratio)/prior_ext/fe_new_point_normalized
+            #print(acc_ratio)
             #correction close to edge based on eqs. (40) and (41) of Sambridge et al. Geophys J. Int. (2006) 167, 528-542
-            if n_source==1:
-                acc_ratio *= 0.5
-            elif n_source==max_n_source-1:
-                acc_ratio *= 2.0
+            #if n_source==1:
+            #    acc_ratio *= 0.5
+            #elif n_source==max_n_source-1:
+            #    acc_ratio *= 2.0
             #if j==0: print(acc_ratio)
             if np.random.uniform()<=acc_ratio:
                 #if j==0: print("Pafff")
@@ -318,6 +322,8 @@ def do_rj_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, fe_file
             healpy_pixel_area = hp.nside2pixarea(hp.get_nside(fe))
             log10f_resolution = np.diff(np.log10(freqs))[0]
             norm = np.sum(fe)*healpy_pixel_area*log10f_resolution
+            #short-term hacky solution
+            norm *= 399/400
             
             #normalization
             fe_old_point_normalized = fe_old_point/norm
@@ -331,11 +337,12 @@ def do_rj_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, fe_file
                          ptas[-1].params[5].get_pdf(phase0) * ptas[-1].params[4].get_pdf(log10_h))
 
             acc_ratio = np.exp(log_acc_ratio)*fe_old_point_normalized*prior_ext
+            #print(acc_ratio)
             #correction close to edge based on eqs. (40) and (41) of Sambridge et al. Geophys J. Int. (2006) 167, 528-542
-            if n_source==2:
-                acc_ratio *= 2.0
-            elif n_source==max_n_source:
-                acc_ratio *= 0.5
+            #if n_source==2:
+            #    acc_ratio *= 2.0
+            #elif n_source==max_n_source:
+            #    acc_ratio *= 0.5
             #if j==0: print(acc_ratio)
             if np.random.uniform()<=acc_ratio:
                 #if j==0: print("Wuuuuuh")
