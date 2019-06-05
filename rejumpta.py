@@ -111,7 +111,8 @@ def run_ptmcmc(N, T_max, n_chain, base_model, pulsars, max_n_source=1, RJ_weight
     #setting up arrays to record acceptance and swaps
     a_yes=np.zeros(n_chain+2)
     a_no=np.zeros(n_chain+2)
-    swap_record=[]
+    swap_record = []
+    rj_record = []
 
     #set up probabilities of different proposals
     total_weight = (regular_weight + PT_swap_weight + Fe_proposal_weight + 
@@ -183,14 +184,14 @@ Draw from prior: {3:.2f}%\nDifferential evolution jump: {4:.2f}%".format(swap_pr
             #do RJ move
             elif (jump_decide<swap_probability+fe_proposal_probability+
                  draw_from_prior_probability+de_probability+RJ_probability):
-                do_rj_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, fe_file)
+                do_rj_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, fe_file, rj_record)
             #regular step
             else:
                 #print("fisher")
                 regular_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, eig)
             #print(samples[0,i,:])
     acc_fraction = a_yes/(a_no+a_yes)
-    return samples, acc_fraction, swap_record
+    return samples, acc_fraction, swap_record, rj_record
 
 
 ################################################################################
@@ -198,7 +199,7 @@ Draw from prior: {3:.2f}%\nDifferential evolution jump: {4:.2f}%".format(swap_pr
 #REVERSIBLE-JUMP (RJ, aka TRANS-DIMENSIONAL) MOVE
 #
 ################################################################################
-def do_rj_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, fe_file):
+def do_rj_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, fe_file, rj_record):
     for j in range(n_chain):
         n_source = int(np.copy(samples[j,i,0]))
         
@@ -206,6 +207,8 @@ def do_rj_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, fe_file
         #decide if we add or remove a signal
         direction_decide = np.random.uniform()
         if n_source==1 or (direction_decide<add_prob and n_source!=max_n_source): #adding a signal------------------------------------------------------
+            #if j==0: print("Add source")
+            if j==0: rj_record.append(1)
             if fe_file==None:
                 raise Exception("Fe-statistics data file is needed for Fe global propsals")
             npzfile = np.load(fe_file)
@@ -272,12 +275,13 @@ def do_rj_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, fe_file
             fe_new_point_normalized = fe_new_point/norm
 
             acc_ratio = np.exp(log_acc_ratio)/prior_ext/fe_new_point_normalized
+            acc_ratio = 1.0 #for testing
             #print(acc_ratio)
             #correction close to edge based on eqs. (40) and (41) of Sambridge et al. Geophys J. Int. (2006) 167, 528-542
-            #if n_source==1:
-            #    acc_ratio *= 0.5
-            #elif n_source==max_n_source-1:
-            #    acc_ratio *= 2.0
+            if n_source==1:
+                acc_ratio *= 0.5
+            elif n_source==max_n_source-1:
+                acc_ratio *= 2.0
             #if j==0: print(acc_ratio)
             if np.random.uniform()<=acc_ratio:
                 #if j==0: print("Pafff")
@@ -289,6 +293,8 @@ def do_rj_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, fe_file
 
            
         elif n_source==max_n_source or (direction_decide>add_prob and n_source!=1):   #removing a signal----------------------------------------------------------
+            #if j==0: print("Remove source")
+            if j==0: rj_record.append(-1)
             if fe_file==None:
                 raise Exception("Fe-statistics data file is needed for Fe global propsals")
             npzfile = np.load(fe_file)
@@ -337,12 +343,13 @@ def do_rj_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, fe_file
                          ptas[-1].params[5].get_pdf(phase0) * ptas[-1].params[4].get_pdf(log10_h))
 
             acc_ratio = np.exp(log_acc_ratio)*fe_old_point_normalized*prior_ext
+            acc_ratio = 1.0 #for testing
             #print(acc_ratio)
             #correction close to edge based on eqs. (40) and (41) of Sambridge et al. Geophys J. Int. (2006) 167, 528-542
-            #if n_source==2:
-            #    acc_ratio *= 2.0
-            #elif n_source==max_n_source:
-            #    acc_ratio *= 0.5
+            if n_source==2:
+                acc_ratio *= 2.0
+            elif n_source==max_n_source:
+                acc_ratio *= 0.5
             #if j==0: print(acc_ratio)
             if np.random.uniform()<=acc_ratio:
                 #if j==0: print("Wuuuuuh")
