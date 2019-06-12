@@ -24,7 +24,7 @@ import enterprise_cw_funcs_from_git as models
 def run_ptmcmc(N, T_max, n_chain, base_model, pulsars, max_n_source=1, RJ_weight=0,
                regular_weight=3, PT_swap_weight=1,
                Fe_proposal_weight=0, fe_file=None, draw_from_prior_weight=0,
-               de_weight=0, prior_recovery=False):
+               de_weight=0, prior_recovery=False, cw_amp_prior='log-uniform'):
     #setting up the pta object
     cws = []
     for i in range(max_n_source):
@@ -35,8 +35,10 @@ def run_ptmcmc(N, T_max, n_chain, base_model, pulsars, max_n_source=1, RJ_weight
         phase0 = parameter.Uniform(0, 2*np.pi)(str(i)+'_'+'phase0')
         psi = parameter.Uniform(0, np.pi)(str(i)+'_'+'psi')
         cos_inc = parameter.Uniform(-1, 1)(str(i)+'_'+'cos_inc')
-        #log10_h = parameter.LinearExp(-18, -11)('log10_h'+str(i))
-        log10_h = parameter.Uniform(-18, -11)(str(i)+'_'+'log10_h')
+        if cw_amp_prior == 'log-uniform':
+            log10_h = parameter.Uniform(-18, -11)(str(i)+'_'+'log10_h')
+        elif cw_amp_prior == 'uniform':
+            log10_h = parameter.LinearExp(-18, -11)(str(i)+'_'+'log10_h')
         cw_wf = models.cw_delay(cos_gwtheta=cos_gwtheta, gwphi=gwphi, log10_mc=log10_mc,
                      log10_h=log10_h, log10_fgw=log10_fgw, phase0=phase0,
                      psi=psi, cos_inc=cos_inc, tref=53000*86400)
