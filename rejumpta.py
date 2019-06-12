@@ -98,7 +98,6 @@ def run_ptmcmc(N, T_max, n_chain, base_model, pulsars, max_n_source=1, RJ_weight
         n_source = np.random.choice(max_n_source) + 1
         samples[j,0,0] = n_source
         print(n_source)
-        #TODO maybe start from an Fe-proposed point?
         samples[j,0,1:n_source*7+1] = np.hstack(p.sample() for p in ptas[n_source-1].params)
         samples[j,0,n_source*7+1:] = np.zeros((max_n_source-n_source)*7)
         #samples[j,0,1:] = np.array([0.5, -0.5, 0.5403, 0.8776, 4.5, 3.5, -8.0969, -7.3979, -13.4133, -12.8381, 1.0, 0.5, 1.0, 0.5])
@@ -347,7 +346,6 @@ def do_rj_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, fe_file
 def do_de_jump(n_chain, n_source, pta, samples, i, Ts, a_yes, a_no, de_history):
     de_indices = np.random.choice(de_history.shape[1], size=2, replace=False)
 
-    #TODO: make it work for changing dimensions!!!
     ndim = 7*n_source
 
     #setting up our two x arrays and replace them with a random draw if the
@@ -392,7 +390,6 @@ def do_de_jump(n_chain, n_source, pta, samples, i, Ts, a_yes, a_no, de_history):
 ################################################################################
 
 def do_draw_from_prior_move(n_chain, n_source, pta, samples, i, Ts, a_yes, a_no):
-    #TODO: make it work for changing dimensions!!!
     ndim = n_source*7
     for j in range(n_chain):
         #make a rendom draw from the prior
@@ -507,7 +504,6 @@ def do_fe_global_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, 
         log10_h_old = np.log10(h_max[f_idx_old, hp_idx_old])
         
         old_params_fe = [cos_inc_old, log10_h_old, phase0_old, psi_old]
-        #TODO:extract prior ranges from pta object!!!!
         prior_ranges = [2.0, 7.0, 2.0*np.pi, np.pi]
         
         new_params = [cos_inc, log10_h, phase0, psi]
@@ -561,8 +557,6 @@ def regular_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, eig):
 
         acc_ratio = np.exp(log_acc_ratio)
         samples[j,i+1,0] = n_source
-        #TODO: check if we need the next line (I think samples is already filled with zeros)
-        #If not, remove it from here and from other jump functions too
         samples[j,i+1,n_source*7+1:] = np.zeros((max_n_source-n_source)*7)
         if np.random.uniform()<=acc_ratio:
             samples[j,i+1,1:n_source*7+1] = new_point
