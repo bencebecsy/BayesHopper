@@ -39,6 +39,8 @@ def run_ptmcmc(N, T_max, n_chain, base_model, pulsars, max_n_source=1, RJ_weight
             log10_h = parameter.Uniform(-18, -11)(str(i)+'_'+'log10_h')
         elif cw_amp_prior == 'uniform':
             log10_h = parameter.LinearExp(-18, -11)(str(i)+'_'+'log10_h')
+        else:
+            print("CW amplitude prior of {0} not available".format(cw_amp_prior))
         cw_wf = models.cw_delay(cos_gwtheta=cos_gwtheta, gwphi=gwphi, log10_mc=log10_mc,
                      log10_h=log10_h, log10_fgw=log10_fgw, phase0=phase0,
                      psi=psi, cos_inc=cos_inc, tref=53000*86400)
