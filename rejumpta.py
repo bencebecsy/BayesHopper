@@ -369,12 +369,12 @@ def do_de_jump(n_chain, n_source, pta, samples, i, Ts, a_yes, a_no, de_history):
     for j in range(n_chain):
         new_point = samples[j,i,:] + alpha*(x1[j,:]-x2[j,:])
         
-        log_acc_ratio = pta.get_lnlikelihood(new_point[:])
+        log_acc_ratio = pta.get_lnlikelihood(new_point[:])/Ts[j]
         log_acc_ratio += pta.get_lnprior(new_point[:])
-        log_acc_ratio += -pta.get_lnlikelihood(samples[j,i,:])
+        log_acc_ratio += -pta.get_lnlikelihood(samples[j,i,:])/Ts[j]
         log_acc_ratio += -pta.get_lnprior(samples[j,i,:])
 
-        acc_ratio = np.exp(log_acc_ratio)**(1/Ts[j])
+        acc_ratio = np.exp(log_acc_ratio)
         if np.random.uniform()<=acc_ratio:
             for k in range(ndim):
                 samples[j,i+1,k] = new_point[k]
@@ -399,12 +399,12 @@ def do_draw_from_prior_move(n_chain, n_source, pta, samples, i, Ts, a_yes, a_no)
         new_point = np.hstack(p.sample() for p in pta.params)
 
         #calculate acceptance ratio
-        log_acc_ratio = pta.get_lnlikelihood(new_point[:])
+        log_acc_ratio = pta.get_lnlikelihood(new_point[:])/Ts[j]
         log_acc_ratio += pta.get_lnprior(new_point[:])
-        log_acc_ratio += -pta.get_lnlikelihood(samples[j,i,1:])
+        log_acc_ratio += -pta.get_lnlikelihood(samples[j,i,1:])/Ts[j]
         log_acc_ratio += -pta.get_lnprior(samples[j,i,1:])
         
-        acc_ratio = np.exp(log_acc_ratio)**(1/Ts[j])
+        acc_ratio = np.exp(log_acc_ratio)
         samples[j,i+1,0] = n_source
         if np.random.uniform()<=acc_ratio:
             for k in range(ndim):
@@ -484,9 +484,9 @@ def do_fe_global_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, 
         if fe_new_point>fe_limit:
             fe_new_point=fe_limit        
         
-        log_acc_ratio = ptas[n_source-1].get_lnlikelihood(new_point)
+        log_acc_ratio = ptas[n_source-1].get_lnlikelihood(new_point)/Ts[j]
         log_acc_ratio += ptas[n_source-1].get_lnprior(new_point)
-        log_acc_ratio += -ptas[n_source-1].get_lnlikelihood(samples[j,i,1:])
+        log_acc_ratio += -ptas[n_source-1].get_lnlikelihood(samples[j,i,1:])/Ts[j]
         log_acc_ratio += -ptas[n_source-1].get_lnprior(samples[j,i,1:])
 
         #get ratio of proposal density for the Hastings ratio
@@ -526,7 +526,7 @@ def do_fe_global_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, 
             elif not det_new and det_old: #from det to non-det
                 hastings_extra_factor *= p_det/(1-p_det)*prior_range/(2*alpha) + 1
 
-        acc_ratio = np.exp(log_acc_ratio)**(1/Ts[j])*(fe_old_point/fe_new_point)*hastings_extra_factor
+        acc_ratio = np.exp(log_acc_ratio)*(fe_old_point/fe_new_point)*hastings_extra_factor
         samples[j,i+1,0] = n_source
         samples[j,i+1,n_source*7+1:] = np.zeros((max_n_source-n_source)*7)
         if np.random.uniform()<=acc_ratio:
@@ -554,12 +554,12 @@ def regular_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, eig):
 
         new_point = samples[j,i,1:n_source*7+1] + jump*np.random.normal()
 
-        log_acc_ratio = ptas[n_source-1].get_lnlikelihood(new_point)
+        log_acc_ratio = ptas[n_source-1].get_lnlikelihood(new_point)/Ts[j]
         log_acc_ratio += ptas[n_source-1].get_lnprior(new_point)
-        log_acc_ratio += -ptas[n_source-1].get_lnlikelihood(samples[j,i,1:])
+        log_acc_ratio += -ptas[n_source-1].get_lnlikelihood(samples[j,i,1:])/Ts[j]
         log_acc_ratio += -ptas[n_source-1].get_lnprior(samples[j,i,1:])
 
-        acc_ratio = np.exp(log_acc_ratio)**(1/Ts[j])
+        acc_ratio = np.exp(log_acc_ratio)
         samples[j,i+1,0] = n_source
         #TODO: check if we need the next line (I think samples is already filled with zeros)
         #If not, remove it from here and from other jump functions too
