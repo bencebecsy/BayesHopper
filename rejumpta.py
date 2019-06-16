@@ -12,6 +12,8 @@ import matplotlib.pyplot as plt
 import enterprise
 import enterprise.signals.parameter as parameter
 from enterprise.signals import signal_base
+from enterprise.signals import white_signals
+from enterprise.signals import gp_signals
 
 import enterprise_cw_funcs_from_git as models
 
@@ -21,10 +23,25 @@ import enterprise_cw_funcs_from_git as models
 #
 ################################################################################
 
-def run_ptmcmc(N, T_max, n_chain, base_model, pulsars, max_n_source=1, RJ_weight=0,
+def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, RJ_weight=0,
                regular_weight=3, PT_swap_weight=1,
                Fe_proposal_weight=0, fe_file=None, draw_from_prior_weight=0,
-               de_weight=0, prior_recovery=False, cw_amp_prior='log-uniform'):
+               de_weight=0, prior_recovery=False, cw_amp_prior='uniform',
+               vary_white_noise=False, wn_params=[1.04,-7]):
+    #setting up base model
+    if vary_white_noise:
+        efac = parameter.Uniform(0.01, 10.0)
+        equad = parameter.Uniform(-8.5, -5)
+    else:
+        efac = parameter.Constant(wn_params[0]) 
+        equad = parameter.Constant(wn_params[1])
+    
+    ef = white_signals.MeasurementNoise(efac=efac)
+    eq = white_signals.EquadNoise(log10_equad=equad)
+    tm = gp_signals.TimingModel(use_svd=True)
+
+    base_model = ef + eq + tm
+    
     #setting up the pta object
     cws = []
     for i in range(max_n_source):
@@ -47,7 +64,7 @@ def run_ptmcmc(N, T_max, n_chain, base_model, pulsars, max_n_source=1, RJ_weight
         cws.append(models.CWSignal(cw_wf, psrTerm=False, name='cw'+str(i)))
     
     ptas = []
-    for n_source in range(1,max_n_source+1):
+    for n_source in range(max_n_source+1):
         s = base_model
         for i in range(n_source):
             s = s + cws[i]
@@ -95,15 +112,30 @@ def run_ptmcmc(N, T_max, n_chain, base_model, pulsars, max_n_source=1, RJ_weight
 
     #setting up array for the fisher eigenvalues
     eig = np.ones((n_chain, max_n_source, 7, 7))*0.1
+    wn_1psr_eig = np.array([[0.1,0],[0,0.1]])
+    eig_wn = np.broadcast_to(wn_1psr_eig,(n_chain,len(pulsars), 2, 2))
 
-    #setting up array for the samples and filling first sample with random draw
-    samples = np.zeros((n_chain, N, max_n_source*7+1))
+    #setting up array for the samples
+    if vary_white_noise:
+        samples = np.zeros((n_chain, N, max_n_source*7+1+len(pulsars)*2))
+    else:
+        samples = np.zeros((n_chain, N, max_n_source*7+1))
+    
+    #filling first sample with random draw
     for j in range(n_chain):
-        n_source = np.random.choice(max_n_source) + 1
+        n_source = np.random.choice(max_n_source+1)
         samples[j,0,0] = n_source
+        #print(samples[0,0,:])
         print(n_source)
-        samples[j,0,1:n_source*7+1] = np.hstack(p.sample() for p in ptas[n_source-1].params)
-        samples[j,0,n_source*7+1:] = np.zeros((max_n_source-n_source)*7)
+        if n_source!=0:
+            samples[j,0,1:n_source*7+1] = np.hstack(p.sample() for p in ptas[n_source].params[:n_source*7])
+        #not needed, because zeros are already there: samples[j,0,n_source*7+1:max_n_source*7+1] = np.zeros((max_n_source-n_source)*7)
+        #print(samples[0,0,:])
+        if vary_white_noise:
+            #samples[j,0,max_n_source*7+1:max_n_source*7+1+len(pulsars)*2] = np.hstack(p.sample() for p in ptas[n_source].params[n_source*7:n_source*7+len(pulsars)*2])
+            #starting from user provided wn parameters (possibly from a prefit)
+            samples[j,0,max_n_source*7+1:max_n_source*7+1+len(pulsars)*2:2] = np.ones(len(pulsars))*wn_params[0]
+            samples[j,0,max_n_source*7+1+1:max_n_source*7+1+len(pulsars)*2+1:2] = np.ones(len(pulsars))*wn_params[1]
         #samples[j,0,1:] = np.array([0.5, -0.5, 0.5403, 0.8776, 4.5, 3.5, -8.0969, -7.3979, -13.4133, -12.8381, 1.0, 0.5, 1.0, 0.5])
         #samples[j,0,1:] = np.array([0.0, 0.54, 1.0, -8.0, -13.39, 2.0, 0.5])
     print(samples[0,0,:])
@@ -131,7 +163,7 @@ Draw from prior: {3:.2f}%\nDifferential evolution jump: {4:.2f}%".format(swap_pr
 
     for i in range(int(N-1)):
         #add current sample to DE history
-        if i%n_de_history==0 and i>=de_start_iter:
+        if i%n_de_history==0 and i>=de_start_iter and de_probability!=0:
             de_hist_index = int((i-de_start_iter)/n_de_history)%history_size
             de_history[:,de_hist_index,:] = samples[:,i,:]
         #print out run state every 10 iterations
@@ -147,14 +179,17 @@ Draw from prior: {3:.2f}%\nDifferential evolution jump: {4:.2f}%".format(swap_pr
             if i%(n_fish_update*10)==0:
                 for j in range(n_chain):
                     n_source = int(np.copy(samples[j,i,0]))
-                    eigenvectors = get_fisher_eigenvectors(samples[j,i,1:n_source*7+1], ptas[n_source-1], T_chain=Ts[j], n_source=n_source)
+                    if n_source!=0:
+                        eigenvectors = get_fisher_eigenvectors(np.delete(samples[j,i,1:], range(n_source*7,max_n_source*7)), ptas[n_source], T_chain=Ts[j], n_source=n_source)
+                    else:
+                        continue
                     #check if eigenvector calculation was succesful
                     #if not, we just keep the initializes eig full of 0.1 values
                     if np.all(eigenvectors):
                         eig[j,:n_source,:,:] = eigenvectors
-            else:
+            elif samples[0,i,0]!=0:
                 n_source = int(np.copy(samples[0,i,0]))
-                eigenvectors = get_fisher_eigenvectors(samples[0,i,1:n_source*7+1], ptas[n_source-1], T_chain=Ts[0], n_source=n_source)
+                eigenvectors = get_fisher_eigenvectors(np.delete(samples[0,i,1:], range(n_source*7,max_n_source*7)), ptas[n_source], T_chain=Ts[0], n_source=n_source)
                 #check if eigenvector calculation was succesful
                 #if not, we just keep the initializes eig full of 0.1 values              
                 if np.all(eigenvectors):
@@ -183,7 +218,7 @@ Draw from prior: {3:.2f}%\nDifferential evolution jump: {4:.2f}%".format(swap_pr
                 do_rj_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, fe_file, rj_record)
             #regular step
             else:
-                regular_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, eig)
+                regular_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, eig, eig_wn)
     
     acc_fraction = a_yes/(a_no+a_yes)
     return samples, acc_fraction, swap_record, rj_record
@@ -201,7 +236,7 @@ def do_rj_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, fe_file
         add_prob = 0.5 #flat prior on n_source-->same propability of addind and removing
         #decide if we add or remove a signal
         direction_decide = np.random.uniform()
-        if n_source==1 or (direction_decide<add_prob and n_source!=max_n_source): #adding a signal------------------------------------------------------
+        if n_source==0 or (direction_decide<add_prob and n_source!=max_n_source): #adding a signal------------------------------------------------------
             if j==0: rj_record.append(1)
             if fe_file==None:
                 raise Exception("Fe-statistics data file is needed for Fe global propsals")
@@ -213,7 +248,7 @@ def do_rj_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, fe_file
             phase0_max = npzfile['phase0_max']
             h_max = npzfile['h_max']
    
-            alpha = 0.1
+            #alpha = 0.1
  
             #set limit used for rejection sampling below
             fe_limit = np.max(fe)
@@ -247,14 +282,17 @@ def do_rj_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, fe_file
             #phase0 = phase0_max[f_idx, hp_idx] + 2*alpha*(np.random.uniform()-0.5)
             #log10_h = np.log10(h_max[f_idx, hp_idx]) + 2*alpha*(np.random.uniform()-0.5)
 
+            samples_current = np.delete(samples[j,i,1:], range(n_source*7,max_n_source*7))
+            #print(samples_current)
+            
+            new_point = np.delete(samples[j,i,1:], range((n_source+1)*7,max_n_source*7))
             new_source = np.array([np.cos(gw_theta), cos_inc, gw_phi, log_f_new, log10_h, phase0, psi])
-            new_point = np.copy(samples[j,i,1:(n_source+1)*7+1])
             new_point[n_source*7:(n_source+1)*7] = new_source
 
-            log_acc_ratio = ptas[(n_source+1)-1].get_lnlikelihood(new_point)/Ts[j]
-            log_acc_ratio += ptas[(n_source+1)-1].get_lnprior(new_point)
-            log_acc_ratio += -ptas[n_source-1].get_lnlikelihood(samples[j,i,1:n_source*7+1])/Ts[j]
-            log_acc_ratio += -ptas[n_source-1].get_lnprior(samples[j,i,1:n_source*7+1])
+            log_acc_ratio = ptas[(n_source+1)].get_lnlikelihood(new_point)/Ts[j]
+            log_acc_ratio += ptas[(n_source+1)].get_lnprior(new_point)
+            log_acc_ratio += -ptas[n_source].get_lnlikelihood(samples_current)/Ts[j]
+            log_acc_ratio += -ptas[n_source].get_lnprior(samples_current)
 
             healpy_pixel_area = hp.nside2pixarea(hp.get_nside(fe))
             log10f_resolution = np.diff(np.log10(freqs))[0]
@@ -268,19 +306,19 @@ def do_rj_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, fe_file
 
             acc_ratio = np.exp(log_acc_ratio)/prior_ext/fe_new_point_normalized
             #correction close to edge based on eqs. (40) and (41) of Sambridge et al. Geophys J. Int. (2006) 167, 528-542
-            if n_source==1:
+            if n_source==0:
                 acc_ratio *= 0.5
             elif n_source==max_n_source-1:
                 acc_ratio *= 2.0
             if np.random.uniform()<=acc_ratio:
                 samples[j,i+1,0] = n_source+1
-                samples[j,i+1,1:(n_source+1)*7+1] = new_point
+                samples[j,i+1,1:(n_source+1)*7+1] = new_point[:(n_source+1)*7]
+                samples[j,i+1,max_n_source*7+1:max_n_source*7+1+len(ptas[n_source].pulsars)*2] = new_point[(n_source+1)*7:(n_source+1)*7+len(ptas[n_source].pulsars)*2]
             else:
-                samples[j,i+1,0] = n_source
-                samples[j,i+1,1:n_source*7+1] = samples[j,i,1:n_source*7+1]
+                samples[j,i+1,:] = samples[j,i,:]
 
            
-        elif n_source==max_n_source or (direction_decide>add_prob and n_source!=1):   #removing a signal----------------------------------------------------------
+        elif n_source==max_n_source or (direction_decide>add_prob and n_source!=0):   #removing a signal----------------------------------------------------------
             if j==0: rj_record.append(-1)
             if fe_file==None:
                 raise Exception("Fe-statistics data file is needed for Fe global propsals")
@@ -294,12 +332,14 @@ def do_rj_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, fe_file
 
             #choose which source to remove
             remove_index = np.random.randint(n_source)
-            new_point = np.delete(samples[j,i,1:n_source*7+1], range(remove_index*7,(remove_index+1)*7))
             
-            log_acc_ratio = ptas[(n_source-1)-1].get_lnlikelihood(new_point)/Ts[j]
-            log_acc_ratio += ptas[(n_source-1)-1].get_lnprior(new_point)
-            log_acc_ratio += -ptas[n_source-1].get_lnlikelihood(samples[j,i,1:n_source*7+1])/Ts[j]
-            log_acc_ratio += -ptas[n_source-1].get_lnprior(samples[j,i,1:n_source*7+1])
+            samples_current = np.delete(samples[j,i,1:], range(n_source*7,max_n_source*7))
+            new_point = np.delete(samples_current, range(remove_index*7,(remove_index+1)*7))
+            
+            log_acc_ratio = ptas[(n_source-1)].get_lnlikelihood(new_point)/Ts[j]
+            log_acc_ratio += ptas[(n_source-1)].get_lnprior(new_point)
+            log_acc_ratio += -ptas[n_source].get_lnlikelihood(samples_current)/Ts[j]
+            log_acc_ratio += -ptas[n_source].get_lnprior(samples_current)
             
             log_f_old = samples[j,i,1+remove_index*7+3]
             f_idx_old = (np.abs(np.log10(freqs) - log_f_old)).argmin()
@@ -328,17 +368,17 @@ def do_rj_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, fe_file
 
             acc_ratio = np.exp(log_acc_ratio)*fe_old_point_normalized*prior_ext
             #correction close to edge based on eqs. (40) and (41) of Sambridge et al. Geophys J. Int. (2006) 167, 528-542
-            if n_source==2:
+            if n_source==1:
                 acc_ratio *= 2.0
             elif n_source==max_n_source:
                 acc_ratio *= 0.5
             if np.random.uniform()<=acc_ratio:
                 samples[j,i+1,0] = n_source-1
-                samples[j,i+1,1:(n_source-1)*7+1] = new_point
+                samples[j,i+1,1:(n_source-1)*7+1] = new_point[:(n_source-1)*7]
+                samples[j,i+1,max_n_source*7+1:max_n_source*7+1+len(ptas[n_source].pulsars)*2] = new_point[(n_source-1)*7:(n_source-1)*7+len(ptas[n_source].pulsars)*2]                
                 a_yes[0] += 1
             else:
-                samples[j,i+1,0] = n_source
-                samples[j,i+1,1:n_source*7+1] = samples[j,i,1:n_source*7+1]
+                samples[j,i+1,:] = samples[j,i,:]
                 a_no[0] += 1
 
 ################################################################################
@@ -434,7 +474,7 @@ def do_fe_global_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, 
     h_max = npzfile['h_max']
 
     #ndim = n_source*7
-
+       
     #set probability of deterministic vs flat proposal in extrinsic parameters
     p_det = 0.5
     #set width of deterministic proposal
@@ -447,6 +487,14 @@ def do_fe_global_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, 
     #    fe_limit=200
     
     for j in range(n_chain):
+        #check if there's any source -- stay at given point of not
+        n_source = int(np.copy(samples[j,i,0]))
+        if n_source==0:
+            samples[j,i+1,:] = samples[j,i,:]
+            a_no[j+2]+=1
+            #print("No source to vary!")
+            continue
+
         accepted = False
         while accepted==False:
             f_new = 10**(ptas[-1].params[3].sample())
@@ -477,18 +525,22 @@ def do_fe_global_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, 
             log10_h = ptas[-1].params[4].sample()
 
         #choose randomly which source to change
-        n_source = int(np.copy(samples[j,i,0]))
         source_select = np.random.randint(n_source)
-        new_point = np.copy(samples[j,i,1:n_source*7+1])
+        #print(source_select)
+        #print(samples[j,i,:])
+        samples_current = np.delete(samples[j,i,1:], range(n_source*7,max_n_source*7))# [j,i,1:n_source*7+1])
+        #print(samples_current)
+        new_point = np.copy(samples_current)
         new_point[source_select*7:(source_select+1)*7] = np.array([np.cos(gw_theta), cos_inc, gw_phi, np.log10(f_new),
                                                                                log10_h, phase0, psi])
+        #print(new_point)
         if fe_new_point>fe_limit:
             fe_new_point=fe_limit        
         
-        log_acc_ratio = ptas[n_source-1].get_lnlikelihood(new_point)/Ts[j]
-        log_acc_ratio += ptas[n_source-1].get_lnprior(new_point)
-        log_acc_ratio += -ptas[n_source-1].get_lnlikelihood(samples[j,i,1:])/Ts[j]
-        log_acc_ratio += -ptas[n_source-1].get_lnprior(samples[j,i,1:])
+        log_acc_ratio = ptas[n_source].get_lnlikelihood(new_point)/Ts[j]
+        log_acc_ratio += ptas[n_source].get_lnprior(new_point)
+        log_acc_ratio += -ptas[n_source].get_lnlikelihood(samples_current)/Ts[j]
+        log_acc_ratio += -ptas[n_source].get_lnprior(samples_current)
 
         #get ratio of proposal density for the Hastings ratio
         f_old = 10**samples[j,i,1+3+source_select*7]
@@ -527,13 +579,14 @@ def do_fe_global_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, 
                 hastings_extra_factor *= p_det/(1-p_det)*prior_range/(2*alpha) + 1
 
         acc_ratio = np.exp(log_acc_ratio)*(fe_old_point/fe_new_point)*hastings_extra_factor
-        samples[j,i+1,0] = n_source
-        samples[j,i+1,n_source*7+1:] = np.zeros((max_n_source-n_source)*7)
+        #not needed (most likely): samples[j,i+1,n_source*7+1:] = np.zeros((max_n_source-n_source)*7)
         if np.random.uniform()<=acc_ratio:
-            samples[j,i+1,1:n_source*7+1] = new_point
+            samples[j,i+1,0] = n_source
+            samples[j,i+1,1:n_source*7+1] = new_point[:n_source*7]
+            samples[j,i+1,max_n_source*7+1:max_n_source*7+1+len(ptas[n_source].pulsars)*2] = new_point[n_source*7:n_source*7+len(ptas[n_source].pulsars)*2]
             a_yes[j+2]+=1
         else:
-            samples[j,i+1,1:n_source*7+1] = samples[j,i,1:n_source*7+1]
+            samples[j,i+1,:] = samples[j,i,:]
             a_no[j+2]+=1
     
 
@@ -543,30 +596,39 @@ def do_fe_global_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, 
 #
 ################################################################################
 
-def regular_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, eig):
+def regular_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, eig, eig_wn):
     for j in range(n_chain):
         n_source = int(np.copy(samples[j,i,0]))
-        ndim = n_source*7
-        source_select = np.random.randint(n_source)
-        jump_select = np.random.randint(int(ndim/n_source))
-        jump_1source = eig[j,source_select,jump_select,:]
-        jump = np.array([jump_1source[int(i-source_select*7)] if i>=source_select*7 and i<(source_select+1)*7 else 0.0 for i in range(ndim)])
+        samples_current = np.delete(samples[j,i,1:], range(n_source*7,max_n_source*7))
+        
+        #decide if moving in source parameters or white noise parameters
+        source_move_prob = 0.5
+        if np.random.uniform()<=source_move_prob and n_source!=0:
+            source_select = np.random.randint(n_source)
+            jump_select = np.random.randint(7)
+            jump_1source = eig[j,source_select,jump_select,:]
+            jump = np.array([jump_1source[int(i-source_select*7)] if i>=source_select*7 and i<(source_select+1)*7 else 0.0 for i in range(samples_current.size)])
+            new_point = samples_current + jump*np.random.normal()
+        else:
+            pulsar_select = np.random.randint(len(ptas[n_source].pulsars))
+            jump_select = np.random.randint(2) #we have two wn parameters, ecorr and efac
+            jump_1psr = eig_wn[j,pulsar_select,jump_select,:]
+            jump = np.array([jump_1psr[int(i-n_source*7-pulsar_select*2)] if i>=n_source*7+pulsar_select*2 and i<n_source*7+(pulsar_select+1)*2 else 0.0 for i in range(samples_current.size)])
+            new_point = samples_current + jump*np.random.normal()
 
-        new_point = samples[j,i,1:n_source*7+1] + jump*np.random.normal()
-
-        log_acc_ratio = ptas[n_source-1].get_lnlikelihood(new_point)/Ts[j]
-        log_acc_ratio += ptas[n_source-1].get_lnprior(new_point)
-        log_acc_ratio += -ptas[n_source-1].get_lnlikelihood(samples[j,i,1:])/Ts[j]
-        log_acc_ratio += -ptas[n_source-1].get_lnprior(samples[j,i,1:])
+        log_acc_ratio = ptas[n_source].get_lnlikelihood(new_point)/Ts[j]
+        log_acc_ratio += ptas[n_source].get_lnprior(new_point)
+        log_acc_ratio += -ptas[n_source].get_lnlikelihood(samples_current)/Ts[j]
+        log_acc_ratio += -ptas[n_source].get_lnprior(samples_current)
 
         acc_ratio = np.exp(log_acc_ratio)
-        samples[j,i+1,0] = n_source
-        samples[j,i+1,n_source*7+1:] = np.zeros((max_n_source-n_source)*7)
         if np.random.uniform()<=acc_ratio:
-            samples[j,i+1,1:n_source*7+1] = new_point
+            samples[j,i+1,0] = n_source
+            samples[j,i+1,1:n_source*7+1] = new_point[:n_source*7]
+            samples[j,i+1,max_n_source*7+1:max_n_source*7+1+len(ptas[n_source].pulsars)*2] = new_point[n_source*7:n_source*7+len(ptas[n_source].pulsars)*2]
             a_yes[j+2]+=1
         else:
-            samples[j,i+1,1:n_source*7+1] = samples[j,i,1:n_source*7+1]
+            samples[j,i+1,:] = samples[j,i,:]
             a_no[j+2]+=1
 
 ################################################################################
@@ -579,15 +641,19 @@ def do_pt_swap(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, swap_re
 
     n_source1 = int(np.copy(samples[swap_chain,i,0]))
     n_source2 = int(np.copy(samples[swap_chain+1,i,0]))
+    
+    samples_current1 = np.delete(samples[swap_chain,i,1:], range(n_source1*7,max_n_source*7))
+    samples_current2 = np.delete(samples[swap_chain+1,i,1:], range(n_source2*7,max_n_source*7)) 
 
-    log_acc_ratio = -ptas[n_source1-1].get_lnlikelihood(samples[swap_chain,i,1:n_source1*7+1]) / Ts[swap_chain]
-    log_acc_ratio += -ptas[n_source1-1].get_lnprior(samples[swap_chain,i,1:n_source1*7+1])
-    log_acc_ratio += -ptas[n_source2-1].get_lnlikelihood(samples[swap_chain+1,i,1:n_source2*7+1]) / Ts[swap_chain+1]
-    log_acc_ratio += -ptas[n_source2-1].get_lnprior(samples[swap_chain+1,i,1:n_source2*7+1])
-    log_acc_ratio += ptas[n_source2-1].get_lnlikelihood(samples[swap_chain+1,i,1:n_source2*7+1]) / Ts[swap_chain]
-    log_acc_ratio += ptas[n_source2-1].get_lnprior(samples[swap_chain+1,i,1:n_source2*7+1])
-    log_acc_ratio += ptas[n_source1-1].get_lnlikelihood(samples[swap_chain,i,1:n_source1*7+1]) / Ts[swap_chain+1]
-    log_acc_ratio += ptas[n_source1-1].get_lnprior(samples[swap_chain,i,1:n_source1*7+1])
+    #turns out the priors don't contribute --> commented them out
+    log_acc_ratio = -ptas[n_source1].get_lnlikelihood(samples_current1) / Ts[swap_chain]
+    #log_acc_ratio += -ptas[n_source1].get_lnprior(samples[swap_chain,i,1:n_source1*7+1])
+    log_acc_ratio += -ptas[n_source2].get_lnlikelihood(samples_current2) / Ts[swap_chain+1]
+    #log_acc_ratio += -ptas[n_source2].get_lnprior(samples[swap_chain+1,i,1:n_source2*7+1])
+    log_acc_ratio += ptas[n_source2].get_lnlikelihood(samples_current2) / Ts[swap_chain]
+    #log_acc_ratio += ptas[n_source2].get_lnprior(samples[swap_chain+1,i,1:n_source2*7+1])
+    log_acc_ratio += ptas[n_source1].get_lnlikelihood(samples_current1) / Ts[swap_chain+1]
+    #log_acc_ratio += ptas[n_source1].get_lnprior(samples[swap_chain,i,1:n_source1*7+1])
 
     acc_ratio = np.exp(log_acc_ratio)
     if np.random.uniform()<=acc_ratio:
@@ -612,7 +678,9 @@ def do_pt_swap(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, swap_re
 ################################################################################
 def get_fisher_eigenvectors(params, pta, T_chain=1, epsilon=1e-4, n_source=1):
     #get dimension and set up an array for the fisher matrix    
-    dim = int(params.shape[0]/n_source)
+    #dim = int(params.shape[0]/n_source)
+    #hardcoding 7 instead, because we can have white noise parameters, which we don'T want to vary here
+    dim = 7
     fisher = np.zeros((n_source,dim,dim))
     eig = []
 
