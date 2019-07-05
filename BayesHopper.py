@@ -29,7 +29,7 @@ def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, RJ_weight=0,
                Fe_proposal_weight=0, fe_file=None, draw_from_prior_weight=0,
                de_weight=0, prior_recovery=False, cw_amp_prior='uniform',
                vary_white_noise=False, wn_params=[1.04,-7],
-               include_gwb=False, gwb_switch_weight=0):
+               include_gwb=False, gwb_switch_weight=0, include_psr_term=False):
     #make sure that we always vary white noise if GWB is included
     if include_gwb:
         vary_white_noise = True
@@ -80,7 +80,7 @@ def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, RJ_weight=0,
         cw_wf = models.cw_delay(cos_gwtheta=cos_gwtheta, gwphi=gwphi, log10_mc=log10_mc,
                      log10_h=log10_h, log10_fgw=log10_fgw, phase0=phase0,
                      psi=psi, cos_inc=cos_inc, tref=53000*86400)
-        cws.append(models.CWSignal(cw_wf, psrTerm=False, name='cw'+str(i)))
+        cws.append(models.CWSignal(cw_wf, psrTerm=include_psr_term, name='cw'+str(i)))
     
     ptas = []
     for n_source in range(max_n_source+1):
