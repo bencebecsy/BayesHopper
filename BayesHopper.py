@@ -25,14 +25,12 @@ import enterprise_cw_funcs_from_git as models
 ################################################################################
 
 def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, RJ_weight=0,
-               regular_weight=3, PT_swap_weight=1,
+               regular_weight=3, noise_jump_weight=3, PT_swap_weight=1,
                Fe_proposal_weight=0, fe_file=None, draw_from_prior_weight=0,
                de_weight=0, prior_recovery=False, cw_amp_prior='uniform',
                vary_white_noise=False, wn_params=[1.04,-7],
-               include_gwb=False, gwb_switch_weight=0, include_psr_term=False):
-    #make sure that we always vary white noise if GWB is included
-    if include_gwb:
-        vary_white_noise = True
+               include_gwb=False, gwb_switch_weight=0, include_psr_term=False,
+               include_rn=False, vary_rn=False, rn_params=[-13.0,1.0]):
     #setting up base model
     if vary_white_noise:
         efac = parameter.Uniform(0.01, 10.0)
@@ -46,7 +44,24 @@ def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, RJ_weight=0,
     tm = gp_signals.TimingModel(use_svd=True)
 
     base_model = ef + eq + tm
-    
+   
+    if include_rn:
+        tmin = [p.toas.min() for p in pulsars]
+        tmax = [p.toas.max() for p in pulsars]
+        Tspan = np.max(tmax) - np.min(tmin)
+        
+        if vary_rn:
+            log10_A = parameter.Uniform(-20, -11)
+            gamma = parameter.Uniform(0, 7)
+        else:
+            log10_A = parameter.Constant(rn_params[0])
+            gamma = parameter.Constant(rn_params[1])
+        
+        pl = utils.powerlaw(log10_A=log10_A, gamma=gamma)
+        rn = gp_signals.FourierBasisGP(spectrum=pl, components=30, Tspan=Tspan)
+        
+        base_model += rn 
+
     #make base models including GWB
     if include_gwb:
         # find the maximum time span to set GW frequency sampling
@@ -151,18 +166,32 @@ def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, RJ_weight=0,
 
     #setting up array for the fisher eigenvalues
     eig = np.ones((n_chain, max_n_source, 7, 7))*0.1
+    
     wn_1psr_eig = np.array([[0.1,0],[0,0.1]])
     eig_wn = np.broadcast_to(wn_1psr_eig,(n_chain,len(pulsars), 2, 2))
+    
+    rn_1psr_eig = np.array([[0.1,0],[0,0.1]])
+    eig_rn = np.broadcast_to(rn_1psr_eig,(n_chain,len(pulsars), 2, 2))
+
     eig_gwb = 0.1
 
     #setting up array for the samples
+    num_params = max_n_source*7+1
     if include_gwb:
-        samples = np.zeros((n_chain, N, max_n_source*7+1+len(pulsars)*2+1))
-    elif vary_white_noise:
-        samples = np.zeros((n_chain, N, max_n_source*7+1+len(pulsars)*2))
-    else:
-        samples = np.zeros((n_chain, N, max_n_source*7+1))
+        num_params += 1
     
+    num_noise_params = 0
+    if vary_white_noise:
+        num_noise_params += len(pulsars)*2
+    if vary_rn:
+        num_noise_params += len(pulsars)*2
+
+    num_params += num_noise_params
+    print(num_params)
+    print(num_noise_params)
+
+    samples = np.zeros((n_chain, N, num_params))
+
     #filling first sample with random draw
     for j in range(n_chain):
         n_source = np.random.choice(max_n_source+1)
@@ -173,16 +202,24 @@ def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, RJ_weight=0,
             samples[j,0,1:n_source*7+1] = np.hstack(p.sample() for p in ptas[n_source][0].params[:n_source*7])
         #not needed, because zeros are already there: samples[j,0,n_source*7+1:max_n_source*7+1] = np.zeros((max_n_source-n_source)*7)
         #print(samples[0,0,:])
-        if vary_white_noise:
+        if vary_white_noise and vary_rn:
             #samples[j,0,max_n_source*7+1:max_n_source*7+1+len(pulsars)*2] = np.hstack(p.sample() for p in ptas[n_source].params[n_source*7:n_source*7+len(pulsars)*2])
             #starting from user provided wn parameters (possibly from a prefit)
-            samples[j,0,max_n_source*7+1:max_n_source*7+1+len(pulsars)*2:2] = np.ones(len(pulsars))*wn_params[0]
-            samples[j,0,max_n_source*7+1+1:max_n_source*7+1+len(pulsars)*2+1:2] = np.ones(len(pulsars))*wn_params[1]
+            samples[j,0,max_n_source*7+1:max_n_source*7+1+num_noise_params:4] = np.ones(len(pulsars))*wn_params[0]
+            samples[j,0,max_n_source*7+1+1:max_n_source*7+1+num_noise_params+1:4] = np.ones(len(pulsars))*wn_params[1]
+            samples[j,0,max_n_source*7+1+2:max_n_source*7+1+num_noise_params+2:4] = np.ones(len(pulsars))*rn_params[1]
+            samples[j,0,max_n_source*7+1+3:max_n_source*7+1+num_noise_params+3:4] = np.ones(len(pulsars))*rn_params[0]
+        elif vary_white_noise:
+            samples[j,0,max_n_source*7+1:max_n_source*7+1+num_noise_params:2] = np.ones(len(pulsars))*wn_params[0]
+            samples[j,0,max_n_source*7+1+1:max_n_source*7+1+num_noise_params+1:2] = np.ones(len(pulsars))*wn_params[1]
+        elif vary_rn:
+            samples[j,0,max_n_source*7+1:max_n_source*7+1+num_noise_params:2] = np.ones(len(pulsars))*rn_params[1]
+            samples[j,0,max_n_source*7+1+1:max_n_source*7+1+num_noise_params+1:2] = np.ones(len(pulsars))*rn_params[0]
         if include_gwb:
             if np.random.uniform()<0.5:
-                samples[j,0,max_n_source*7+1+len(pulsars)*2] = 0.0
+                samples[j,0,max_n_source*7+1+num_noise_params] = 0.0
             else:
-                samples[j,0,max_n_source*7+1+len(pulsars)*2] = ptas[n_source][1].params[n_source*7+len(pulsars)*2].sample()
+                samples[j,0,max_n_source*7+1+num_noise_params] = ptas[n_source][1].params[n_source*7+num_noise_params].sample()
         #samples[j,0,1:] = np.array([0.5, -0.5, 0.5403, 0.8776, 4.5, 3.5, -8.0969, -7.3979, -13.4133, -12.8381, 1.0, 0.5, 1.0, 0.5])
         #samples[j,0,1:] = np.array([0.0, 0.54, 1.0, -8.0, -13.39, 2.0, 0.5])
     print(samples[0,0,:])
@@ -195,7 +232,7 @@ def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, RJ_weight=0,
 
     #set up probabilities of different proposals
     total_weight = (regular_weight + PT_swap_weight + Fe_proposal_weight + 
-                    draw_from_prior_weight + de_weight + RJ_weight + gwb_switch_weight)
+                    draw_from_prior_weight + de_weight + RJ_weight + gwb_switch_weight + noise_jump_weight)
     swap_probability = PT_swap_weight/total_weight
     fe_proposal_probability = Fe_proposal_weight/total_weight
     regular_probability = regular_weight/total_weight
@@ -203,11 +240,12 @@ def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, RJ_weight=0,
     de_probability = de_weight/total_weight
     RJ_probability = RJ_weight/total_weight
     gwb_switch_probability = gwb_switch_weight/total_weight
+    noise_jump_probability = noise_jump_weight/total_weight
     print("Percentage of steps doing different jumps:\nPT swaps: {0:.2f}%\nRJ moves: {5:.2f}%\nGWB-switches: {6:.2f}%\n\
 Fe-proposals: {1:.2f}%\nJumps along Fisher eigendirections: {2:.2f}%\n\
-Draw from prior: {3:.2f}%\nDifferential evolution jump: {4:.2f}%".format(swap_probability*100,
+Draw from prior: {3:.2f}%\nDifferential evolution jump: {4:.2f}%\nNoise jump: {7:.2f}%".format(swap_probability*100,
           fe_proposal_probability*100, regular_probability*100, draw_from_prior_probability*100,
-          de_probability*100, RJ_probability*100, gwb_switch_probability*100))
+          de_probability*100, RJ_probability*100, gwb_switch_probability*100, noise_jump_probability*100))
 
     for i in range(int(N-1)):
         #add current sample to DE history
@@ -229,7 +267,7 @@ Draw from prior: {3:.2f}%\nDifferential evolution jump: {4:.2f}%".format(swap_pr
                     n_source = int(np.copy(samples[j,i,0]))
                     if n_source!=0:
                         if include_gwb:
-                            gwb_on = int(samples[j,i,max_n_source*7+1+len(pulsars)*2]!=0.0)
+                            gwb_on = int(samples[j,i,max_n_source*7+1+num_noise_params]!=0.0)
                         else:
                             gwb_on = 0
                         eigenvectors = get_fisher_eigenvectors(np.delete(samples[j,i,1:], range(n_source*7,max_n_source*7)), ptas[n_source][gwb_on], T_chain=Ts[j], n_source=n_source)
@@ -242,7 +280,7 @@ Draw from prior: {3:.2f}%\nDifferential evolution jump: {4:.2f}%".format(swap_pr
             elif samples[0,i,0]!=0:
                 n_source = int(np.copy(samples[0,i,0]))
                 if include_gwb:
-                    gwb_on = int(samples[0,i,max_n_source*7+1+len(pulsars)*2]!=0.0)
+                    gwb_on = int(samples[0,i,max_n_source*7+1+num_noise_params]!=0.0)
                 else:
                     gwb_on = 0
                 eigenvectors = get_fisher_eigenvectors(np.delete(samples[0,i,1:], range(n_source*7,max_n_source*7)), ptas[n_source][gwb_on], T_chain=Ts[0], n_source=n_source)
@@ -257,10 +295,10 @@ Draw from prior: {3:.2f}%\nDifferential evolution jump: {4:.2f}%".format(swap_pr
             jump_decide = np.random.uniform()
             #PT swap move
             if jump_decide<swap_probability:
-                do_pt_swap(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, swap_record, vary_white_noise, include_gwb)
+                do_pt_swap(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, swap_record, vary_white_noise, include_gwb, num_noise_params)
             #global proposal based on Fe-statistic
             elif jump_decide<swap_probability+fe_proposal_probability:
-                do_fe_global_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, fe_file, vary_white_noise, include_gwb)
+                do_fe_global_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, fe_file, vary_white_noise, include_gwb, num_noise_params)
             #draw from prior move
             elif jump_decide<swap_probability+fe_proposal_probability+draw_from_prior_probability:
                 do_draw_from_prior_move(n_chain, n_source, pta, samples, i, Ts, a_yes, a_no)
@@ -271,14 +309,18 @@ Draw from prior: {3:.2f}%\nDifferential evolution jump: {4:.2f}%".format(swap_pr
             #do RJ move
             elif (jump_decide<swap_probability+fe_proposal_probability+
                  draw_from_prior_probability+de_probability+RJ_probability):
-                do_rj_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, fe_file, rj_record, vary_white_noise, include_gwb)
+                do_rj_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, fe_file, rj_record, vary_white_noise, include_gwb, num_noise_params)
             #do GWB switch move
             elif (jump_decide<swap_probability+fe_proposal_probability+
                  draw_from_prior_probability+de_probability+RJ_probability+gwb_switch_probability):
-                gwb_switch_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, vary_white_noise, include_gwb)
+                gwb_switch_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, vary_white_noise, include_gwb, num_noise_params)
+            #do noise jump
+            elif (jump_decide<swap_probability+fe_proposal_probability+
+                 draw_from_prior_probability+de_probability+RJ_probability+gwb_switch_probability+noise_jump_probability):
+                noise_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, eig_wn, eig_rn, include_gwb, num_noise_params, vary_white_noise, vary_rn)
             #regular step
             else:
-                regular_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, eig, eig_wn, eig_gwb, vary_white_noise, include_gwb)
+                regular_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, eig, eig_gwb, include_gwb, num_noise_params)
     
     acc_fraction = a_yes/(a_no+a_yes)
     return samples, acc_fraction, swap_record, rj_record
@@ -288,19 +330,19 @@ Draw from prior: {3:.2f}%\nDifferential evolution jump: {4:.2f}%".format(swap_pr
 #GWB SWITCH (ON/OFF) MOVE
 #
 ################################################################################
-def gwb_switch_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, vary_white_noise, include_gwb):
+def gwb_switch_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, vary_white_noise, include_gwb, num_noise_params):
     if not include_gwb:
        raise Exception("include_qwb must be True to use this move")
     for j in range(n_chain):
         n_source = int(np.copy(samples[j,i,0]))
-        gwb_on = int(samples[j,i,max_n_source*7+1+len(ptas[-1][0].pulsars)*2]!=0.0)
+        gwb_on = int(samples[j,i,max_n_source*7+1+num_noise_params]!=0.0)
         
         #turning off ---------------------------------------------------------------------------------------------------------
         if gwb_on==1:
             #print("Turn off")
             samples_current = np.delete(samples[j,i,1:], range(n_source*7,max_n_source*7))
             new_point = np.delete(samples[j,i,1:], range(n_source*7,max_n_source*7))
-            new_point[n_source*7+len(ptas[n_source][gwb_on].pulsars)*2] = 0.0
+            new_point[n_source*7+num_noise_params] = 0.0
             #print(samples_current, new_point)
 
             log_acc_ratio = ptas[n_source][0].get_lnlikelihood(new_point)/Ts[j]
@@ -324,7 +366,7 @@ def gwb_switch_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, va
             #print("Turn on")
             samples_current = np.delete(samples[j,i,1:], range(n_source*7,max_n_source*7))
             new_point = np.delete(samples[j,i,1:], range(n_source*7,max_n_source*7))
-            new_point[n_source*7+len(ptas[n_source][gwb_on].pulsars)*2] = ptas[0][1].params[len(ptas[n_source][gwb_on].pulsars)*2].sample()
+            new_point[n_source*7+num_noise_params] = ptas[0][1].params[num_noise_params].sample()
             #print(samples_current,new_point)
 
             log_acc_ratio = ptas[n_source][1].get_lnlikelihood(new_point)/Ts[j]
@@ -349,12 +391,12 @@ def gwb_switch_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, va
 #REVERSIBLE-JUMP (RJ, aka TRANS-DIMENSIONAL) MOVE
 #
 ################################################################################
-def do_rj_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, fe_file, rj_record, vary_white_noise, include_gwb):
+def do_rj_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, fe_file, rj_record, vary_white_noise, include_gwb, num_noise_params):
     for j in range(n_chain):
         n_source = int(np.copy(samples[j,i,0]))
 
         if include_gwb:
-            gwb_on = int(samples[j,i,max_n_source*7+1+len(ptas[-1][0].pulsars)*2]!=0.0)
+            gwb_on = int(samples[j,i,max_n_source*7+1+num_noise_params]!=0.0)
         else:
             gwb_on = 0
         
@@ -591,7 +633,7 @@ def do_draw_from_prior_move(n_chain, n_source, pta, samples, i, Ts, a_yes, a_no)
 #
 ################################################################################
 
-def do_fe_global_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, fe_file, vary_white_noise, include_gwb):    
+def do_fe_global_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, fe_file, vary_white_noise, include_gwb, num_noise_params):    
     if fe_file==None:
         raise Exception("Fe-statistics data file is needed for Fe global propsals")
     npzfile = np.load(fe_file)
@@ -625,7 +667,7 @@ def do_fe_global_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, 
             continue
 
         if include_gwb:
-            gwb_on = int(samples[j,i,max_n_source*7+1+len(ptas[-1][0].pulsars)*2]!=0.0)
+            gwb_on = int(samples[j,i,max_n_source*7+1+num_noise_params]!=0.0)
         else:
             gwb_on = 0
 
@@ -731,54 +773,32 @@ def do_fe_global_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, 
 #
 ################################################################################
 
-def regular_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, eig, eig_wn, eig_gwb, vary_white_noise, include_gwb):
+def regular_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, eig, eig_gwb, include_gwb, num_noise_params):
     for j in range(n_chain):
         n_source = int(np.copy(samples[j,i,0]))
 
         if include_gwb:
-            gwb_on = int(samples[j,i,max_n_source*7+1+len(ptas[-1][0].pulsars)*2]!=0.0)
+            gwb_on = int(samples[j,i,max_n_source*7+1+num_noise_params]!=0.0)
         else:
             gwb_on = 0
 
         samples_current = np.delete(samples[j,i,1:], range(n_source*7,max_n_source*7))
         
-        #decide if moving in source parameters or white noise parameters
-        #case #1: we can vary all of them
-        if n_source!=0 and vary_white_noise==True and gwb_on==1:
-            vary_decide = np.random.uniform()
-            if vary_decide <= 1/3.0:
-                what_to_vary = 'CW'
-            elif vary_decide <=2.0/3.0:
-                what_to_vary = 'WN'
-            else:
-                what_to_vary = 'GWB'
-        #case #2: we can't vary GWB
-        elif n_source!=0 and vary_white_noise==True:
-            vary_decide = np.random.uniform()
-            if vary_decide <= 0.5:
-                what_to_vary = 'CW'
-            else:
-                what_to_vary = 'WN'
-        #case #3: we can't vary WN
-        elif n_source!=0 and gwb_on==1:
+        #decide if moving in CW source parameters or GWB parameters
+        #case #1: we can vary both
+        if n_source!=0 and gwb_on==1:
             vary_decide = np.random.uniform()
             if vary_decide <= 0.5:
                 what_to_vary = 'CW'
             else:
                 what_to_vary = 'GWB'
-        #case #4: we can't vary CW
-        elif vary_white_noise==True and gwb_on==1:
-            vary_decide = np.random.uniform()
-            if vary_decide <= 0.5:
-                what_to_vary = 'WN'
-            else:
-                what_to_vary = 'GWB'
+        #case #2: we can only vary CW
         elif n_source!=0:
             what_to_vary = 'CW'
-        elif vary_white_noise==True:
-            what_to_vary = 'WN'
+        #case #3: we can only vary GWB
         elif gwb_on==1:
             what_to_vary = 'GWB'
+        #case #4: nothing to vary
         else:
             samples[j,i+1,:] = samples[j,i,:]
             a_no[j+2]+=1
@@ -790,13 +810,8 @@ def regular_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, eig, 
             jump_select = np.random.randint(7)
             jump_1source = eig[j,source_select,jump_select,:]
             jump = np.array([jump_1source[int(i-source_select*7)] if i>=source_select*7 and i<(source_select+1)*7 else 0.0 for i in range(samples_current.size)])
-        elif what_to_vary == 'WN':
-            pulsar_select = np.random.randint(len(ptas[n_source][gwb_on].pulsars))
-            jump_select = np.random.randint(2) #we have two wn parameters, ecorr and efac
-            jump_1psr = eig_wn[j,pulsar_select,jump_select,:]
-            jump = np.array([jump_1psr[int(i-n_source*7-pulsar_select*2)] if i>=n_source*7+pulsar_select*2 and i<n_source*7+(pulsar_select+1)*2 else 0.0 for i in range(samples_current.size)])
         elif what_to_vary == 'GWB':
-            jump = np.array([eig_gwb if i==n_source*7+len(ptas[n_source][gwb_on].pulsars)*2 else 0.0 for i in range(samples_current.size)])
+            jump = np.array([eig_gwb if i==n_source*7+num_noise_params else 0.0 for i in range(samples_current.size)])
         
         new_point = samples_current + jump*np.random.normal()
 
@@ -818,18 +833,98 @@ def regular_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, eig, 
 
 ################################################################################
 #
+#NOISE MCMC JUMP ROUTINE (JUMPING ALONG EIGENDIRECTIONS)
+#
+################################################################################
+
+def noise_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, eig_wn, eig_rn, include_gwb, num_noise_params, vary_white_noise, vary_rn):
+    for j in range(n_chain):
+        n_source = int(np.copy(samples[j,i,0]))
+
+        if include_gwb:
+            gwb_on = int(samples[j,i,max_n_source*7+1+num_noise_params]!=0.0)
+        else:
+            gwb_on = 0
+
+        samples_current = np.delete(samples[j,i,1:], range(n_source*7,max_n_source*7))
+        
+        #decide if moving in CW source parameters or GWB parameters
+        #case #1: we can vary both
+        if vary_white_noise==True and vary_rn==True:
+            vary_decide = np.random.uniform()
+            if vary_decide <= 0.5:
+                what_to_vary = 'RN'
+            else:
+                what_to_vary = 'WN'
+        #case #2: we can only vary WN
+        elif vary_white_noise==True:
+            what_to_vary = 'WN'
+        #case #3: we can only vary RN
+        elif vary_rn==True:
+            what_to_vary = 'RN'
+        #case #4: nothing to vary
+        else:
+            samples[j,i+1,:] = samples[j,i,:]
+            a_no[j+2]+=1
+            print("Nothing to vary! Why use this proposal then?")
+            continue
+
+        if what_to_vary == 'WN':
+            pulsar_select = np.random.randint(len(ptas[n_source][gwb_on].pulsars))
+            jump_select = np.random.randint(2) #we have two wn parameters, efac and equad
+            jump_1psr = eig_wn[j,pulsar_select,jump_select,:]
+            if vary_rn:
+                psr_param_factor = 4
+            else:
+                psr_param_factor = 2
+            jump = np.array([jump_1psr[int(i-n_source*7-pulsar_select*psr_param_factor)] if i>=n_source*7+pulsar_select*psr_param_factor and i<=n_source*7+pulsar_select*psr_param_factor+1 else 0.0 for i in range(samples_current.size)])
+        elif what_to_vary == 'RN':
+            pulsar_select = np.random.randint(len(ptas[n_source][gwb_on].pulsars))
+            jump_select = np.random.randint(2) #we have two rn parameters, gamma and amplitude
+            jump_1psr = eig_rn[j,pulsar_select,jump_select,:]
+            if vary_white_noise:
+                psr_param_factor = 4
+            else:
+                psr_param_factor = 2
+            jump = np.array([jump_1psr[int(i-n_source*7-pulsar_select*psr_param_factor-2)] if i>=n_source*7+pulsar_select*psr_param_factor+2 and i<=n_source*7+pulsar_select*psr_param_factor+2+1 else 0.0 for i in range(samples_current.size)])
+        
+        #if j==0: print(what_to_vary)
+        #if j==0: print(jump)
+        new_point = samples_current + jump*np.random.normal()
+
+        log_acc_ratio = ptas[n_source][gwb_on].get_lnlikelihood(new_point)/Ts[j]
+        log_acc_ratio += ptas[n_source][gwb_on].get_lnprior(new_point)
+        log_acc_ratio += -ptas[n_source][gwb_on].get_lnlikelihood(samples_current)/Ts[j]
+        log_acc_ratio += -ptas[n_source][gwb_on].get_lnprior(samples_current)
+
+        acc_ratio = np.exp(log_acc_ratio)
+        #if j==0: print(acc_ratio)
+        if np.random.uniform()<=acc_ratio:
+            #if j==0: print("Ohhhh")
+            samples[j,i+1,0] = n_source
+            samples[j,i+1,1:n_source*7+1] = new_point[:n_source*7]
+            #samples[j,i+1,max_n_source*7+1:max_n_source*7+1+len(ptas[n_source].pulsars)*2] = new_point[n_source*7:n_source*7+len(ptas[n_source].pulsars)*2]
+            samples[j,i+1,max_n_source*7+1:] = new_point[n_source*7:]
+            a_yes[j+2]+=1
+        else:
+            samples[j,i+1,:] = samples[j,i,:]
+            a_no[j+2]+=1
+
+
+################################################################################
+#
 #PARALLEL TEMPERING SWAP JUMP ROUTINE
 #
 ################################################################################
-def do_pt_swap(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, swap_record, vary_white_noise, include_gwb):
+def do_pt_swap(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, swap_record, vary_white_noise, include_gwb, num_noise_params):
     swap_chain = np.random.randint(n_chain-1)
 
     n_source1 = int(np.copy(samples[swap_chain,i,0]))
     n_source2 = int(np.copy(samples[swap_chain+1,i,0]))
 
     if include_gwb:
-        gwb_on1 = int(samples[swap_chain,i,max_n_source*7+1+len(ptas[-1][0].pulsars)*2]!=0.0)
-        gwb_on2 = int(samples[swap_chain+1,i,max_n_source*7+1+len(ptas[-1][0].pulsars)*2]!=0.0)
+        gwb_on1 = int(samples[swap_chain,i,max_n_source*7+1+num_noise_params]!=0.0)
+        gwb_on2 = int(samples[swap_chain+1,i,max_n_source*7+1+num_noise_params]!=0.0)
     else:
         gwb_on1 = 0
         gwb_on2 = 0
