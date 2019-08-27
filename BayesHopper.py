@@ -28,22 +28,22 @@ def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, RJ_weight=0,
                regular_weight=3, noise_jump_weight=3, PT_swap_weight=1,
                Fe_proposal_weight=0, fe_file=None, draw_from_prior_weight=0,
                de_weight=0, prior_recovery=False, cw_amp_prior='uniform',
-               vary_white_noise=False, wn_params=[1.04,-7],
+               vary_white_noise=False, efac_start=1.0,
                include_gwb=False, gwb_switch_weight=0, include_psr_term=False,
                include_rn=False, vary_rn=False, rn_params=[-13.0,1.0]):
     #setting up base model
     if vary_white_noise:
         efac = parameter.Uniform(0.01, 10.0)
-        equad = parameter.Uniform(-8.5, -5)
+        #equad = parameter.Uniform(-8.5, -5)
     else:
-        efac = parameter.Constant(wn_params[0]) 
-        equad = parameter.Constant(wn_params[1])
+        efac = parameter.Constant(efac_start) 
+        #equad = parameter.Constant(wn_params[1])
     
     ef = white_signals.MeasurementNoise(efac=efac)
-    eq = white_signals.EquadNoise(log10_equad=equad)
+    #eq = white_signals.EquadNoise(log10_equad=equad)
     tm = gp_signals.TimingModel(use_svd=True)
 
-    base_model = ef + eq + tm
+    base_model = ef + tm
    
     if include_rn:
         tmin = [p.toas.min() for p in pulsars]
@@ -182,7 +182,7 @@ def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, RJ_weight=0,
     
     num_noise_params = 0
     if vary_white_noise:
-        num_noise_params += len(pulsars)*2
+        num_noise_params += len(pulsars)
     if vary_rn:
         num_noise_params += len(pulsars)*2
 
@@ -205,13 +205,11 @@ def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, RJ_weight=0,
         if vary_white_noise and vary_rn:
             #samples[j,0,max_n_source*7+1:max_n_source*7+1+len(pulsars)*2] = np.hstack(p.sample() for p in ptas[n_source].params[n_source*7:n_source*7+len(pulsars)*2])
             #starting from user provided wn parameters (possibly from a prefit)
-            samples[j,0,max_n_source*7+1:max_n_source*7+1+num_noise_params:4] = np.ones(len(pulsars))*wn_params[0]
-            samples[j,0,max_n_source*7+1+1:max_n_source*7+1+num_noise_params+1:4] = np.ones(len(pulsars))*wn_params[1]
-            samples[j,0,max_n_source*7+1+2:max_n_source*7+1+num_noise_params+2:4] = np.ones(len(pulsars))*rn_params[1]
-            samples[j,0,max_n_source*7+1+3:max_n_source*7+1+num_noise_params+3:4] = np.ones(len(pulsars))*rn_params[0]
+            samples[j,0,max_n_source*7+1:max_n_source*7+1+num_noise_params:4] = np.ones(len(pulsars))*efac_start
+            samples[j,0,max_n_source*7+1+1:max_n_source*7+1+num_noise_params+1:4] = np.ones(len(pulsars))*rn_params[1]
+            samples[j,0,max_n_source*7+1+2:max_n_source*7+1+num_noise_params+2:4] = np.ones(len(pulsars))*rn_params[0]
         elif vary_white_noise:
-            samples[j,0,max_n_source*7+1:max_n_source*7+1+num_noise_params:2] = np.ones(len(pulsars))*wn_params[0]
-            samples[j,0,max_n_source*7+1+1:max_n_source*7+1+num_noise_params+1:2] = np.ones(len(pulsars))*wn_params[1]
+            samples[j,0,max_n_source*7+1:max_n_source*7+1+num_noise_params:2] = np.ones(len(pulsars))*efac_start
         elif vary_rn:
             samples[j,0,max_n_source*7+1:max_n_source*7+1+num_noise_params:2] = np.ones(len(pulsars))*rn_params[1]
             samples[j,0,max_n_source*7+1+1:max_n_source*7+1+num_noise_params+1:2] = np.ones(len(pulsars))*rn_params[0]
