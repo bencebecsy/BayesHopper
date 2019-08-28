@@ -31,7 +31,7 @@ def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, RJ_weight=0,
                de_weight=0, prior_recovery=False, cw_amp_prior='uniform',
                vary_white_noise=False, efac_start=1.0,
                include_gwb=False, gwb_switch_weight=0, include_psr_term=False,
-               include_rn=False, vary_rn=False, rn_params=[-13.0,1.0]):
+               include_rn=False, vary_rn=False, rn_params=[-13.0,1.0], jupyter_notebook=False):
     #setting up base model
     if vary_white_noise:
         efac = parameter.Uniform(0.01, 10.0)
@@ -248,10 +248,15 @@ Draw from prior: {3:.2f}%\nDifferential evolution jump: {4:.2f}%\nNoise jump: {7
         #print out run state every 10 iterations
         if i%n_status_update==0:
             acc_fraction = a_yes/(a_no+a_yes)
-            print('Progress: {0:2.2f}% '.format(i/N*100) +
-                  'Acceptance fraction (RJ, swap, each chain): ({0:1.2f}, {1:1.2f}, '.format(acc_fraction[0], acc_fraction[1]) +
-                  ', '.join(['{{{}:1.2f}}'.format(i) for i in range(n_chain)]).format(*acc_fraction[2:]) +
-                  ')' + '\r',end='')
+            if jupyter_notebook:
+                print('Progress: {0:2.2f}% '.format(i/N*100) +
+                      'Acceptance fraction (RJ, swap, each chain): ({0:1.2f}, {1:1.2f}, '.format(acc_fraction[0], acc_fraction[1]) +
+                      ', '.join(['{{{}:1.2f}}'.format(i) for i in range(n_chain)]).format(*acc_fraction[2:]) +
+                      ')' + '\r',end='')
+            else:
+                print('Progress: {0:2.2f}% '.format(i/N*100) +
+                      'Acceptance fraction (RJ, swap, each chain): ({0:1.2f}, {1:1.2f}, '.format(acc_fraction[0], acc_fraction[1]) +
+                      ', '.join(['{{{}:1.2f}}'.format(i) for i in range(n_chain)]).format(*acc_fraction[2:]) + ')')
         #update our eigenvectors from the fisher matrix every n_fish_update iterations
         if i%n_fish_update==0 and i>=n_global_first:
             #only update T>1 chains every 10th time
