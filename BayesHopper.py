@@ -69,7 +69,8 @@ def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, RJ_weight=0,
         tmax = [p.toas.max() for p in pulsars]
         Tspan = np.max(tmax) - np.min(tmin)
         # GW parameters (initialize with names here to use parameters in common across pulsars)
-        log10_A_gw = parameter.LinearExp(-18,-12)('log10_A_gw')
+        #log10_A_gw = parameter.LinearExp(-18,-12)('log10_A_gw')
+        log10_A_gw = parameter.Uniform(-18,-12)('log10_A_gw')
         gamma_gw = parameter.Constant(4.33)('gamma_gw')
         # gwb (no spatial correlations)
         cpl = utils.powerlaw(log10_A=log10_A_gw, gamma=gamma_gw)
@@ -195,10 +196,12 @@ def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, RJ_weight=0,
         if vary_white_noise:
             samples[j,0,max_n_source*7+1:max_n_source*7+1+len(pulsars)] = np.ones(len(pulsars))*efac_start
         if vary_rn:
-            samples[j,0,max_n_source*7+1+len(pulsars):max_n_source*7+1+num_noise_params] = np.array([rn_params[1], rn_params[0]])
+            samples[j,0,max_n_source*7+1+len(pulsars):max_n_source*7+1+num_noise_params] = np.array([ptas[n_source][0].params[n_source*7+num_noise_params-2].sample(), ptas[n_source][0].params[n_source*7+num_noise_params-1].sample()])
         if include_gwb:
             samples[j,0,max_n_source*7+1+num_noise_params] = ptas[n_source][1].params[n_source*7+num_noise_params].sample()
+            #samples[j,0,max_n_source*7+1+num_noise_params] = 0.0 #start with GWB off
     print(samples[0,0,:])
+    print(ptas[n_source][0].get_lnlikelihood(np.delete(samples[0,0,1:], range(n_source*7,max_n_source*7))))
 
     #setting up array for the fisher eigenvalues
     #one for cw parameters which we will keep updating
@@ -211,11 +214,12 @@ def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, RJ_weight=0,
     eig_wn = np.ones((n_chain,len(pulsars), len(pulsars)))*0.1
  
     #calculate wn eigenvectors
-    #for j in range(n_chain):
-    #    wn_eigvec = get_fisher_eigenvectors(np.delete(samples[j,i,1:], range(n_source*7,max_n_source*7)), ptas[n_source][1], T_chain=Ts[j], n_source=1, dim=len(pulsars), offset=n_source*7)
-    #    #print(wn_eigvec)
-    #    if np.all(wn_eigvec):
-    #        eig_wn[j,:,:] = wn_eigvec[0,:,:]
+    for j in range(n_chain):
+        #print('wn eigvec calculation')
+        #print(n_source)
+        wn_eigvec = get_fisher_eigenvectors(np.delete(samples[j,0,1:], range(n_source*7,max_n_source*7)), ptas[n_source][1], T_chain=Ts[j], n_source=1, dim=len(pulsars), offset=n_source*7)
+        #print(wn_eigvec)
+        eig_wn[j,:,:] = wn_eigvec[0,:,:]
 
     #setting up arrays to record acceptance and swaps
     a_yes=np.zeros(n_chain+2)
@@ -370,11 +374,11 @@ def gwb_switch_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, va
                 a_no[0] += 1
         #turning on ----------------------------------------------------------------------------------------------------------
         else:
-            #print("Turn on")
+            #if j==0: print("Turn on")
             samples_current = np.delete(samples[j,i,1:], range(n_source*7,max_n_source*7))
             new_point = np.delete(samples[j,i,1:], range(n_source*7,max_n_source*7))
             new_point[n_source*7+num_noise_params] = ptas[0][1].params[num_noise_params].sample()
-            #print(samples_current,new_point)
+            #if j==0: print(samples_current,new_point)
 
             log_acc_ratio = ptas[n_source][1].get_lnlikelihood(new_point)/Ts[j]
             log_acc_ratio += ptas[n_source][1].get_lnprior(new_point)
@@ -382,8 +386,9 @@ def gwb_switch_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, va
             log_acc_ratio += -ptas[n_source][0].get_lnprior(samples_current)
 
             acc_ratio = np.exp(log_acc_ratio)
-
+            #if j==0: print(acc_ratio)
             if np.random.uniform()<=acc_ratio:
+                #if j==0: print('yeeee')
                 samples[j,i+1,0] = n_source
                 samples[j,i+1,1:n_source*7+1] = new_point[:n_source*7]
                 #samples[j,i+1,max_n_source*7+1:max_n_source*7+1+len(ptas[n_source].pulsars)*2] = new_point[(n_source+1)*7:(n_source+1)*7+len(ptas[n_source].pulsars)*2]
@@ -822,6 +827,8 @@ def regular_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, eig, 
         elif what_to_vary == 'GWB':
             jump_select = np.random.randint(3)
             jump_gwb = eig_gwb_rn[j,jump_select,:]
+            if gwb_on==0:
+                jump_gwb[-1] = 0
             jump = np.array([jump_gwb[int(i-n_source*7-len(ptas[n_source][gwb_on].pulsars))] if i>=n_source*7+len(ptas[n_source][gwb_on].pulsars) and i<n_source*7+num_noise_params+1 else 0.0 for i in range(samples_current.size)])
             #print('gwb+rn')
             #print(jump)
@@ -866,8 +873,8 @@ def noise_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, eig_wn,
         #print(jump_select)
         jump_wn = eig_wn[j,jump_select,:]
         jump = np.array([jump_wn[int(i-n_source*7)] if i>=n_source*7 and i<n_source*7+len(ptas[n_source][gwb_on].pulsars) else 0.0 for i in range(samples_current.size)])
-        #print('noise')
-        #print(jump)
+        #if j==0: print('noise')
+        #if j==0: print(jump)
 
         new_point = samples_current + jump*np.random.normal()
 
@@ -966,6 +973,9 @@ def get_fisher_eigenvectors(params, pta, T_chain=1, epsilon=1e-4, n_source=1, di
             
             #calculate diagonal elements of the Hessian from a central finite element scheme
             #note the minus sign compared to the regular Hessian
+            #print('diagonal')
+            #print(pp,nn,mm)
+            #print(-(pp - 2.0*nn + mm)/(4.0*epsilon*epsilon))
             fisher[k,i,i] = -(pp - 2.0*nn + mm)/(4.0*epsilon*epsilon)
 
         #calculate off-diagonal elements
@@ -994,6 +1004,9 @@ def get_fisher_eigenvectors(params, pta, T_chain=1, epsilon=1e-4, n_source=1, di
 
                 #calculate off-diagonal elements of the Hessian from a central finite element scheme
                 #note the minus sign compared to the regular Hessian
+                #print('off-diagonal')
+                #print(pp,mp,pm,mm)
+                #print(-(pp - mp - pm + mm)/(4.0*epsilon*epsilon))
                 fisher[k,i,j] = -(pp - mp - pm + mm)/(4.0*epsilon*epsilon)
                 fisher[k,j,i] = -(pp - mp - pm + mm)/(4.0*epsilon*epsilon)
         
@@ -1012,7 +1025,8 @@ def get_fisher_eigenvectors(params, pta, T_chain=1, epsilon=1e-4, n_source=1, di
             w, v = np.linalg.eig(FISHER)
 
             #filter w for eigenvalues smaller than 100 and set those to 100 -- Neil's trick
-            eig_limit = 100.0    
+            eig_limit = 100.0
+
             W = np.where(np.abs(w)>eig_limit, w, eig_limit)
             #print(W)
             #print(np.sum(v**2, axis=0))
@@ -1031,6 +1045,9 @@ def get_fisher_eigenvectors(params, pta, T_chain=1, epsilon=1e-4, n_source=1, di
         #plt.figure()
         #plt.imshow(np.log10(np.abs(np.real(np.array(FISHER)))))
         #plt.imshow(np.real(np.array(FISHER)))
+        #plt.colorbar()
+        
+        #plt.figure()
         #plt.imshow(np.log10(np.abs(np.real(np.array(eig)[0,:,:]))))
         #plt.imshow(np.real(np.array(eig)[0,:,:]))
         #plt.colorbar()
