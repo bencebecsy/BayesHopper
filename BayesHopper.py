@@ -17,6 +17,7 @@ from enterprise.signals import gp_signals
 from enterprise.signals import utils
 
 import enterprise_cw_funcs_from_git as models
+from enterprise_extensions import models as ext_models
 
 ################################################################################
 #
@@ -44,21 +45,20 @@ def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, RJ_weight=0,
     tm = gp_signals.TimingModel(use_svd=True)
 
     base_model = ef + tm
-   
+    
+    #adding red noise if included
     if include_rn:
         tmin = [p.toas.min() for p in pulsars]
         tmax = [p.toas.max() for p in pulsars]
         Tspan = np.max(tmax) - np.min(tmin)
         
         if vary_rn:
-            log10_A = parameter.Uniform(-20, -11)
-            gamma = parameter.Uniform(0, 7)
+            rn = ext_models.common_red_noise_block(prior='uniform', Tspan=Tspan, name='com_rn')
         else:
             log10_A = parameter.Constant(rn_params[0])
             gamma = parameter.Constant(rn_params[1])
-        
-        pl = utils.powerlaw(log10_A=log10_A, gamma=gamma)
-        rn = gp_signals.FourierBasisGP(spectrum=pl, components=30, Tspan=Tspan)
+            pl = utils.powerlaw(log10_A=log10_A, gamma=gamma)
+            rn = gp_signals.FourierBasisGP(spectrum=pl, components=30, Tspan=Tspan)
         
         base_model += rn 
 
@@ -164,17 +164,7 @@ def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, RJ_weight=0,
     print("Using {0} temperature chains with a geometric spacing of {1:.3f}.\
  Temperature ladder is:\n".format(n_chain,c),Ts)
 
-    #setting up array for the fisher eigenvalues
-    eig = np.ones((n_chain, max_n_source, 7, 7))*0.1
-    
-    wn_1psr_eig = np.array([[0.1,0],[0,0.1]])
-    eig_wn = np.broadcast_to(wn_1psr_eig,(n_chain,len(pulsars), 2, 2))
-    
-    rn_1psr_eig = np.array([[0.1,0],[0,0.1]])
-    eig_rn = np.broadcast_to(rn_1psr_eig,(n_chain,len(pulsars), 2, 2))
-
-    eig_gwb = 0.1
-
+   
     #setting up array for the samples
     num_params = max_n_source*7+1
     if include_gwb:
@@ -184,7 +174,7 @@ def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, RJ_weight=0,
     if vary_white_noise:
         num_noise_params += len(pulsars)
     if vary_rn:
-        num_noise_params += len(pulsars)*2
+        num_noise_params += 2
 
     num_params += num_noise_params
     print(num_params)
@@ -202,25 +192,30 @@ def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, RJ_weight=0,
             samples[j,0,1:n_source*7+1] = np.hstack(p.sample() for p in ptas[n_source][0].params[:n_source*7])
         #not needed, because zeros are already there: samples[j,0,n_source*7+1:max_n_source*7+1] = np.zeros((max_n_source-n_source)*7)
         #print(samples[0,0,:])
-        if vary_white_noise and vary_rn:
-            #samples[j,0,max_n_source*7+1:max_n_source*7+1+len(pulsars)*2] = np.hstack(p.sample() for p in ptas[n_source].params[n_source*7:n_source*7+len(pulsars)*2])
-            #starting from user provided wn parameters (possibly from a prefit)
-            samples[j,0,max_n_source*7+1:max_n_source*7+1+num_noise_params:4] = np.ones(len(pulsars))*efac_start
-            samples[j,0,max_n_source*7+1+1:max_n_source*7+1+num_noise_params+1:4] = np.ones(len(pulsars))*rn_params[1]
-            samples[j,0,max_n_source*7+1+2:max_n_source*7+1+num_noise_params+2:4] = np.ones(len(pulsars))*rn_params[0]
-        elif vary_white_noise:
-            samples[j,0,max_n_source*7+1:max_n_source*7+1+num_noise_params:2] = np.ones(len(pulsars))*efac_start
-        elif vary_rn:
-            samples[j,0,max_n_source*7+1:max_n_source*7+1+num_noise_params:2] = np.ones(len(pulsars))*rn_params[1]
-            samples[j,0,max_n_source*7+1+1:max_n_source*7+1+num_noise_params+1:2] = np.ones(len(pulsars))*rn_params[0]
+        if vary_white_noise:
+            samples[j,0,max_n_source*7+1:max_n_source*7+1+len(pulsars)] = np.ones(len(pulsars))*efac_start
+        if vary_rn:
+            samples[j,0,max_n_source*7+1+len(pulsars):max_n_source*7+1+num_noise_params] = np.array([rn_params[1], rn_params[0]])
         if include_gwb:
-            if np.random.uniform()<0.5:
-                samples[j,0,max_n_source*7+1+num_noise_params] = 0.0
-            else:
-                samples[j,0,max_n_source*7+1+num_noise_params] = ptas[n_source][1].params[n_source*7+num_noise_params].sample()
-        #samples[j,0,1:] = np.array([0.5, -0.5, 0.5403, 0.8776, 4.5, 3.5, -8.0969, -7.3979, -13.4133, -12.8381, 1.0, 0.5, 1.0, 0.5])
-        #samples[j,0,1:] = np.array([0.0, 0.54, 1.0, -8.0, -13.39, 2.0, 0.5])
+            samples[j,0,max_n_source*7+1+num_noise_params] = ptas[n_source][1].params[n_source*7+num_noise_params].sample()
     print(samples[0,0,:])
+
+    #setting up array for the fisher eigenvalues
+    #one for cw parameters which we will keep updating
+    eig = np.ones((n_chain, max_n_source, 7, 7))*0.1
+    
+    #one for GWB and common rn parameters, which we will keep updating
+    eig_gwb_rn = np.ones((n_chain, 3, 3))*0.1
+
+    #and one for white noise parameters, which we will not update
+    eig_wn = np.ones((n_chain,len(pulsars), len(pulsars)))*0.1
+ 
+    #calculate wn eigenvectors
+    #for j in range(n_chain):
+    #    wn_eigvec = get_fisher_eigenvectors(np.delete(samples[j,i,1:], range(n_source*7,max_n_source*7)), ptas[n_source][1], T_chain=Ts[j], n_source=1, dim=len(pulsars), offset=n_source*7)
+    #    #print(wn_eigvec)
+    #    if np.all(wn_eigvec):
+    #        eig_wn[j,:,:] = wn_eigvec[0,:,:]
 
     #setting up arrays to record acceptance and swaps
     a_yes=np.zeros(n_chain+2)
@@ -269,12 +264,21 @@ Draw from prior: {3:.2f}%\nDifferential evolution jump: {4:.2f}%\nNoise jump: {7
                         else:
                             gwb_on = 0
                         eigenvectors = get_fisher_eigenvectors(np.delete(samples[j,i,1:], range(n_source*7,max_n_source*7)), ptas[n_source][gwb_on], T_chain=Ts[j], n_source=n_source)
+                        eigvec_rn = get_fisher_eigenvectors(np.delete(samples[j,i,1:], range(n_source*7,max_n_source*7)), ptas[n_source][gwb_on], T_chain=Ts[j], n_source=1, dim=3, offset=n_source*7+len(pulsars))
+                        if np.all(eigenvectors):
+                            eig[j,:n_source,:,:] = eigenvectors
+                        if np.all(eigvec_rn):
+                            eig_gwb_rn[j,:,:] = eigvec_rn[0,:,:]
                     else:
-                        continue
-                    #check if eigenvector calculation was succesful
-                    #if not, we just keep the initializes eig full of 0.1 values
-                    if np.all(eigenvectors):
-                        eig[j,:n_source,:,:] = eigenvectors
+                        if include_gwb:
+                            gwb_on = int(samples[j,i,max_n_source*7+1+num_noise_params]!=0.0)
+                        else:
+                            gwb_on = 0
+                        eigvec_rn = get_fisher_eigenvectors(np.delete(samples[j,i,1:], range(n_source*7,max_n_source*7)), ptas[n_source][gwb_on], T_chain=Ts[j], n_source=1, dim=3, offset=n_source*7+len(pulsars))
+                        #check if eigenvector calculation was succesful
+                        #if not, we just keep the initializes eig full of 0.1 values
+                        if np.all(eigvec_rn):
+                            eig_gwb_rn[j,:,:] = eigvec_rn[0,:,:]
             elif samples[0,i,0]!=0:
                 n_source = int(np.copy(samples[0,i,0]))
                 if include_gwb:
@@ -315,10 +319,10 @@ Draw from prior: {3:.2f}%\nDifferential evolution jump: {4:.2f}%\nNoise jump: {7
             #do noise jump
             elif (jump_decide<swap_probability+fe_proposal_probability+
                  draw_from_prior_probability+de_probability+RJ_probability+gwb_switch_probability+noise_jump_probability):
-                noise_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, eig_wn, eig_rn, include_gwb, num_noise_params, vary_white_noise, vary_rn)
+                noise_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, eig_wn, include_gwb, num_noise_params, vary_white_noise)
             #regular step
             else:
-                regular_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, eig, eig_gwb, include_gwb, num_noise_params)
+                regular_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, eig, eig_gwb_rn, include_gwb, num_noise_params, vary_rn)
     
     acc_fraction = a_yes/(a_no+a_yes)
     return samples, acc_fraction, swap_record, rj_record
@@ -552,7 +556,7 @@ def do_rj_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, fe_file
 
 ################################################################################
 #
-#DIFFERENTIAL EVOLUTION PROPOSAL
+#DIFFERENTIAL EVOLUTION PROPOSAL ----------------- OUT OF USE
 #
 ################################################################################
 
@@ -598,7 +602,7 @@ def do_de_jump(n_chain, n_source, pta, samples, i, Ts, a_yes, a_no, de_history):
 
 ################################################################################
 #
-#DRAW FROM PRIOR MOVE
+#DRAW FROM PRIOR MOVE ------------ OUT OF USE
 #
 ################################################################################
 
@@ -767,11 +771,11 @@ def do_fe_global_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, 
 
 ################################################################################
 #
-#REGULAR MCMC JUMP ROUTINE (JUMPING ALONG EIGENDIRECTIONS)
+#REGULAR MCMC JUMP ROUTINE (JUMPING ALONG EIGENDIRECTIONS IN CW, GWB AND RN PARAMETERS)
 #
 ################################################################################
 
-def regular_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, eig, eig_gwb, include_gwb, num_noise_params):
+def regular_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, eig, eig_gwb_rn, include_gwb, num_noise_params, vary_rn):
     for j in range(n_chain):
         n_source = int(np.copy(samples[j,i,0]))
 
@@ -782,9 +786,9 @@ def regular_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, eig, 
 
         samples_current = np.delete(samples[j,i,1:], range(n_source*7,max_n_source*7))
         
-        #decide if moving in CW source parameters or GWB parameters
+        #decide if moving in CW source parameters or GWB/RN parameters
         #case #1: we can vary both
-        if n_source!=0 and gwb_on==1:
+        if n_source!=0 and (gwb_on==1 or vary_rn):
             vary_decide = np.random.uniform()
             if vary_decide <= 0.5:
                 what_to_vary = 'CW'
@@ -794,7 +798,7 @@ def regular_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, eig, 
         elif n_source!=0:
             what_to_vary = 'CW'
         #case #3: we can only vary GWB
-        elif gwb_on==1:
+        elif gwb_on==1 or vary_rn:
             what_to_vary = 'GWB'
         #case #4: nothing to vary
         else:
@@ -808,8 +812,14 @@ def regular_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, eig, 
             jump_select = np.random.randint(7)
             jump_1source = eig[j,source_select,jump_select,:]
             jump = np.array([jump_1source[int(i-source_select*7)] if i>=source_select*7 and i<(source_select+1)*7 else 0.0 for i in range(samples_current.size)])
+            #print('cw')
+            #print(jump)
         elif what_to_vary == 'GWB':
-            jump = np.array([eig_gwb if i==n_source*7+num_noise_params else 0.0 for i in range(samples_current.size)])
+            jump_select = np.random.randint(3)
+            jump_gwb = eig_gwb_rn[j,jump_select,:]
+            jump = np.array([jump_gwb[int(i-n_source*7-len(ptas[n_source][gwb_on].pulsars))] if i>=n_source*7+len(ptas[n_source][gwb_on].pulsars) and i<n_source*7+num_noise_params+1 else 0.0 for i in range(samples_current.size)])
+            #print('gwb+rn')
+            #print(jump)
         
         new_point = samples_current + jump*np.random.normal()
 
@@ -831,11 +841,11 @@ def regular_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, eig, 
 
 ################################################################################
 #
-#NOISE MCMC JUMP ROUTINE (JUMPING ALONG EIGENDIRECTIONS)
+#NOISE MCMC JUMP ROUTINE (JUMPING ALONG EIGENDIRECTIONS IN WHITE NOISE PARAMETERS)
 #
 ################################################################################
 
-def noise_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, eig_wn, eig_rn, include_gwb, num_noise_params, vary_white_noise, vary_rn):
+def noise_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, eig_wn, include_gwb, num_noise_params, vary_white_noise):
     for j in range(n_chain):
         n_source = int(np.copy(samples[j,i,0]))
 
@@ -846,48 +856,14 @@ def noise_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, eig_wn,
 
         samples_current = np.delete(samples[j,i,1:], range(n_source*7,max_n_source*7))
         
-        #decide if moving in CW source parameters or GWB parameters
-        #case #1: we can vary both
-        if vary_white_noise==True and vary_rn==True:
-            vary_decide = np.random.uniform()
-            if vary_decide <= 0.5:
-                what_to_vary = 'RN'
-            else:
-                what_to_vary = 'WN'
-        #case #2: we can only vary WN
-        elif vary_white_noise==True:
-            what_to_vary = 'WN'
-        #case #3: we can only vary RN
-        elif vary_rn==True:
-            what_to_vary = 'RN'
-        #case #4: nothing to vary
-        else:
-            samples[j,i+1,:] = samples[j,i,:]
-            a_no[j+2]+=1
-            print("Nothing to vary! Why use this proposal then?")
-            continue
+        #do the wn jump
+        jump_select = np.random.randint(len(ptas[n_source][gwb_on].pulsars))
+        #print(jump_select)
+        jump_wn = eig_wn[j,jump_select,:]
+        jump = np.array([jump_wn[int(i-n_source*7)] if i>=n_source*7 and i<n_source*7+len(ptas[n_source][gwb_on].pulsars) else 0.0 for i in range(samples_current.size)])
+        #print('noise')
+        #print(jump)
 
-        if what_to_vary == 'WN':
-            pulsar_select = np.random.randint(len(ptas[n_source][gwb_on].pulsars))
-            jump_select = np.random.randint(2) #we have two wn parameters, efac and equad
-            jump_1psr = eig_wn[j,pulsar_select,jump_select,:]
-            if vary_rn:
-                psr_param_factor = 4
-            else:
-                psr_param_factor = 2
-            jump = np.array([jump_1psr[int(i-n_source*7-pulsar_select*psr_param_factor)] if i>=n_source*7+pulsar_select*psr_param_factor and i<=n_source*7+pulsar_select*psr_param_factor+1 else 0.0 for i in range(samples_current.size)])
-        elif what_to_vary == 'RN':
-            pulsar_select = np.random.randint(len(ptas[n_source][gwb_on].pulsars))
-            jump_select = np.random.randint(2) #we have two rn parameters, gamma and amplitude
-            jump_1psr = eig_rn[j,pulsar_select,jump_select,:]
-            if vary_white_noise:
-                psr_param_factor = 4
-            else:
-                psr_param_factor = 2
-            jump = np.array([jump_1psr[int(i-n_source*7-pulsar_select*psr_param_factor-2)] if i>=n_source*7+pulsar_select*psr_param_factor+2 and i<=n_source*7+pulsar_select*psr_param_factor+2+1 else 0.0 for i in range(samples_current.size)])
-        
-        #if j==0: print(what_to_vary)
-        #if j==0: print(jump)
         new_point = samples_current + jump*np.random.normal()
 
         log_acc_ratio = ptas[n_source][gwb_on].get_lnlikelihood(new_point)/Ts[j]
@@ -956,11 +932,7 @@ def do_pt_swap(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, swap_re
 #FISHER EIGENVALUE CALCULATION
 #
 ################################################################################
-def get_fisher_eigenvectors(params, pta, T_chain=1, epsilon=1e-4, n_source=1):
-    #get dimension and set up an array for the fisher matrix    
-    #dim = int(params.shape[0]/n_source)
-    #hardcoding 7 instead, because we can have white noise parameters, which we don'T want to vary here
-    dim = 7
+def get_fisher_eigenvectors(params, pta, T_chain=1, epsilon=1e-4, n_source=1, dim=7, offset=0):
     fisher = np.zeros((n_source,dim,dim))
     eig = []
 
@@ -977,8 +949,8 @@ def get_fisher_eigenvectors(params, pta, T_chain=1, epsilon=1e-4, n_source=1):
             #create parameter vectors with +-epsilon in the ith component
             paramsPP = np.copy(params)
             paramsMM = np.copy(params)
-            paramsPP[i+k*dim] += 2*epsilon
-            paramsMM[i+k*dim] -= 2*epsilon
+            paramsPP[offset+i+k*dim] += 2*epsilon
+            paramsMM[offset+i+k*dim] -= 2*epsilon
             #print(paramsPP)
             
             #lnlikelihood at +-epsilon positions
@@ -1000,14 +972,14 @@ def get_fisher_eigenvectors(params, pta, T_chain=1, epsilon=1e-4, n_source=1):
                 paramsPM = np.copy(params)
                 paramsMP = np.copy(params)
 
-                paramsPP[i+k*dim] += epsilon
-                paramsPP[j+k*dim] += epsilon
-                paramsMM[i+k*dim] -= epsilon
-                paramsMM[j+k*dim] -= epsilon
-                paramsPM[i+k*dim] += epsilon
-                paramsPM[j+k*dim] -= epsilon
-                paramsMP[i+k*dim] -= epsilon
-                paramsMP[j+k*dim] += epsilon
+                paramsPP[offset+i+k*dim] += epsilon
+                paramsPP[offset+j+k*dim] += epsilon
+                paramsMM[offset+i+k*dim] -= epsilon
+                paramsMM[offset+j+k*dim] -= epsilon
+                paramsPM[offset+i+k*dim] += epsilon
+                paramsPM[offset+j+k*dim] -= epsilon
+                paramsMP[offset+i+k*dim] -= epsilon
+                paramsMP[offset+j+k*dim] += epsilon
 
                 #lnlikelihood at those positions
                 pp = pta.get_lnlikelihood(paramsPP)
@@ -1053,6 +1025,9 @@ def get_fisher_eigenvectors(params, pta, T_chain=1, epsilon=1e-4, n_source=1):
         #import matplotlib.pyplot as plt
         #plt.figure()
         #plt.imshow(np.log10(np.abs(np.real(np.array(FISHER)))))
+        #plt.imshow(np.real(np.array(FISHER)))
+        #plt.imshow(np.log10(np.abs(np.real(np.array(eig)[0,:,:]))))
+        #plt.imshow(np.real(np.array(eig)[0,:,:]))
         #plt.colorbar()
     
     return np.array(eig)
