@@ -68,7 +68,7 @@ def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, RJ_weight=0,
         tmin = [p.toas.min() for p in pulsars]
         tmax = [p.toas.max() for p in pulsars]
         Tspan = np.max(tmax) - np.min(tmin)
-        gwb = common_red_noise_block(psd='powerlaw', prior='log-uniform', Tspan=Tspan,
+        gwb = ext_models.common_red_noise_block(psd='powerlaw', prior='log-uniform', Tspan=Tspan,
                                      components=30, gamma_val=13.0/3,
                                      orf='hd', name='gw')
         base_model_gwb = base_model + gwb
