@@ -68,13 +68,9 @@ def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, RJ_weight=0,
         tmin = [p.toas.min() for p in pulsars]
         tmax = [p.toas.max() for p in pulsars]
         Tspan = np.max(tmax) - np.min(tmin)
-        # GW parameters (initialize with names here to use parameters in common across pulsars)
-        #log10_A_gw = parameter.LinearExp(-18,-12)('log10_A_gw')
-        log10_A_gw = parameter.Uniform(-18,-12)('log10_A_gw')
-        gamma_gw = parameter.Constant(4.33)('gamma_gw')
-        # gwb (no spatial correlations)
-        cpl = utils.powerlaw(log10_A=log10_A_gw, gamma=gamma_gw)
-        gwb = gp_signals.FourierBasisGP(spectrum=cpl, components=30, Tspan=Tspan, name='gw')
+        gwb = common_red_noise_block(psd='powerlaw', prior='log-uniform', Tspan=Tspan,
+                                     components=30, gamma_val=13.0/3,
+                                     orf='hd', name='gw')
         base_model_gwb = base_model + gwb
 
     #setting up the pta object
