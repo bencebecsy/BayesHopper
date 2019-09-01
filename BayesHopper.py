@@ -28,7 +28,7 @@ from enterprise_extensions import models as ext_models
 def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, RJ_weight=0,
                regular_weight=3, noise_jump_weight=3, PT_swap_weight=1,
                Fe_proposal_weight=0, fe_file=None, draw_from_prior_weight=0,
-               de_weight=0, prior_recovery=False, cw_amp_prior='uniform',
+               de_weight=0, prior_recovery=False, cw_amp_prior='uniform', gwb_amp_prior='uniform',
                vary_white_noise=False, efac_start=1.0,
                include_gwb=False, gwb_switch_weight=0, include_psr_term=False,
                include_rn=False, vary_rn=False, rn_params=[-13.0,1.0], jupyter_notebook=False):
@@ -68,7 +68,7 @@ def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, RJ_weight=0,
         tmin = [p.toas.min() for p in pulsars]
         tmax = [p.toas.max() for p in pulsars]
         Tspan = np.max(tmax) - np.min(tmin)
-        gwb = ext_models.common_red_noise_block(psd='powerlaw', prior='log-uniform', Tspan=Tspan,
+        gwb = ext_models.common_red_noise_block(psd='powerlaw', prior=gwb_amp_prior, Tspan=Tspan,
                                      components=30, gamma_val=13.0/3,
                                      orf='hd', name='gw')
         base_model_gwb = base_model + gwb
