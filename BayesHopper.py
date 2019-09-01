@@ -346,20 +346,26 @@ def gwb_switch_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, va
         
         #turning off ---------------------------------------------------------------------------------------------------------
         if gwb_on==1:
-            #print("Turn off")
+            #if j==0: print("Turn off")
             samples_current = np.delete(samples[j,i,1:], range(n_source*7,max_n_source*7))
             new_point = np.delete(samples[j,i,1:], range(n_source*7,max_n_source*7))
+            old_log_amp = np.copy(new_point[n_source*7+num_noise_params])
+            #make a dummy enterprise parameter which we will use for getting the proposal density at the value of the old amplitude
+            sampling_parameter = parameter.Uniform(-18, -11)('dummy')
+
             new_point[n_source*7+num_noise_params] = 0.0
-            #print(samples_current, new_point)
+            #if j==0: print(samples_current, new_point)
+            #if j==0: print(ptas[n_source][1].get_lnlikelihood(new_point)/Ts[j], ptas[n_source][1].get_lnprior(new_point), -ptas[n_source][0].get_lnlikelihood(samples_current)/Ts[j], -ptas[n_source][0].get_lnprior(samples_current))
 
             log_acc_ratio = ptas[n_source][0].get_lnlikelihood(new_point)/Ts[j]
             log_acc_ratio += ptas[n_source][0].get_lnprior(new_point)
             log_acc_ratio += -ptas[n_source][1].get_lnlikelihood(samples_current)/Ts[j]
             log_acc_ratio += -ptas[n_source][1].get_lnprior(samples_current)
 
-            acc_ratio = np.exp(log_acc_ratio)
-            
+            acc_ratio = np.exp(log_acc_ratio)*sampling_parameter.get_pdf(old_log_amp)
+            #if j==0: print(acc_ratio)
             if np.random.uniform()<=acc_ratio:
+                #if j==0: print('wooooow')
                 samples[j,i+1,0] = n_source
                 samples[j,i+1,1:n_source*7+1] = new_point[:n_source*7]
                 #samples[j,i+1,max_n_source*7+1:max_n_source*7+1+len(ptas[n_source].pulsars)*2] = new_point[(n_source+1)*7:(n_source+1)*7+len(ptas[n_source].pulsars)*2]
@@ -373,15 +379,20 @@ def gwb_switch_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, va
             #if j==0: print("Turn on")
             samples_current = np.delete(samples[j,i,1:], range(n_source*7,max_n_source*7))
             new_point = np.delete(samples[j,i,1:], range(n_source*7,max_n_source*7))
-            new_point[n_source*7+num_noise_params] = ptas[0][1].params[num_noise_params].sample()
+            #new_point[n_source*7+num_noise_params] = ptas[0][1].params[num_noise_params].sample()
+            #make a dummy enterprise parameter which we will use for drawing from a log-uniform A distribution
+            sampling_parameter = parameter.Uniform(-18, -11)('dummy')
+            new_log_amp = sampling_parameter.sample()
+            new_point[n_source*7+num_noise_params] = new_log_amp
             #if j==0: print(samples_current,new_point)
+            #if j==0: print(ptas[n_source][1].get_lnlikelihood(new_point)/Ts[j], ptas[n_source][1].get_lnprior(new_point), -ptas[n_source][0].get_lnlikelihood(samples_current)/Ts[j], -ptas[n_source][0].get_lnprior(samples_current))
 
             log_acc_ratio = ptas[n_source][1].get_lnlikelihood(new_point)/Ts[j]
             log_acc_ratio += ptas[n_source][1].get_lnprior(new_point)
             log_acc_ratio += -ptas[n_source][0].get_lnlikelihood(samples_current)/Ts[j]
             log_acc_ratio += -ptas[n_source][0].get_lnprior(samples_current)
 
-            acc_ratio = np.exp(log_acc_ratio)
+            acc_ratio = np.exp(log_acc_ratio)/sampling_parameter.get_pdf(new_log_amp)
             #if j==0: print(acc_ratio)
             if np.random.uniform()<=acc_ratio:
                 #if j==0: print('yeeee')
@@ -1092,6 +1103,7 @@ def get_prior_recovery_pta(pta):
         def __init__(self, pta):
             self.pta = pta
             self.params = pta.params
+            self.pulsars = pta.pulsars
         def get_lnlikelihood(self, x):
             return 0.0
         def get_lnprior(self, x):
