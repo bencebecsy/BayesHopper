@@ -31,7 +31,8 @@ def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, RJ_weight=0,
                de_weight=0, prior_recovery=False, cw_amp_prior='uniform', gwb_amp_prior='uniform',
                vary_white_noise=False, efac_start=1.0,
                include_gwb=False, gwb_switch_weight=0, include_psr_term=False,
-               include_rn=False, vary_rn=False, rn_params=[-13.0,1.0], jupyter_notebook=False):
+               include_rn=False, vary_rn=False, rn_params=[-13.0,1.0], jupyter_notebook=False,
+               gwb_on_prior=0.5):
     #setting up base model
     if vary_white_noise:
         efac = parameter.Uniform(0.01, 10.0)
@@ -160,6 +161,9 @@ def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, RJ_weight=0,
     Ts = c**np.arange(n_chain)
     print("Using {0} temperature chains with a geometric spacing of {1:.3f}.\
  Temperature ladder is:\n".format(n_chain,c),Ts)
+
+    #printitng out the prior used on GWB on/off
+    print("Prior on GWB on/off: {0}%%".format(gwb_on_prior))
 
    
     #setting up array for the samples
@@ -320,7 +324,7 @@ Draw from prior: {3:.2f}%\nDifferential evolution jump: {4:.2f}%\nNoise jump: {7
             #do GWB switch move
             elif (jump_decide<swap_probability+fe_proposal_probability+
                  draw_from_prior_probability+de_probability+RJ_probability+gwb_switch_probability):
-                gwb_switch_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, vary_white_noise, include_gwb, num_noise_params)
+                gwb_switch_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, vary_white_noise, include_gwb, num_noise_params, gwb_on_prior)
             #do noise jump
             elif (jump_decide<swap_probability+fe_proposal_probability+
                  draw_from_prior_probability+de_probability+RJ_probability+gwb_switch_probability+noise_jump_probability):
@@ -337,7 +341,7 @@ Draw from prior: {3:.2f}%\nDifferential evolution jump: {4:.2f}%\nNoise jump: {7
 #GWB SWITCH (ON/OFF) MOVE
 #
 ################################################################################
-def gwb_switch_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, vary_white_noise, include_gwb, num_noise_params):
+def gwb_switch_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, vary_white_noise, include_gwb, num_noise_params, gwb_on_prior):
     if not include_gwb:
        raise Exception("include_qwb must be True to use this move")
     for j in range(n_chain):
@@ -363,6 +367,8 @@ def gwb_switch_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, va
             log_acc_ratio += -ptas[n_source][1].get_lnprior(samples_current)
 
             acc_ratio = np.exp(log_acc_ratio)*sampling_parameter.get_pdf(old_log_amp)
+            #apply on/off prior
+            acc_ratio *= (1-gwb_on_prior)/gwb_on_prior
             #if j==0: print(acc_ratio)
             if np.random.uniform()<=acc_ratio:
                 #if j==0: print('wooooow')
@@ -393,6 +399,8 @@ def gwb_switch_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, va
             log_acc_ratio += -ptas[n_source][0].get_lnprior(samples_current)
 
             acc_ratio = np.exp(log_acc_ratio)/sampling_parameter.get_pdf(new_log_amp)
+            #apply on/off prior
+            acc_ratio *= gwb_on_prior/(1-gwb_on_prior)
             #if j==0: print(acc_ratio)
             if np.random.uniform()<=acc_ratio:
                 #if j==0: print('yeeee')
