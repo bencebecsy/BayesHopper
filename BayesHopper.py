@@ -28,7 +28,7 @@ from enterprise_extensions import models as ext_models
 def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, RJ_weight=0,
                regular_weight=3, noise_jump_weight=3, PT_swap_weight=1,
                Fe_proposal_weight=0, fe_file=None, draw_from_prior_weight=0,
-               de_weight=0, prior_recovery=False, cw_amp_prior='uniform', gwb_amp_prior='uniform',
+               de_weight=0, prior_recovery=False, cw_amp_prior='uniform', gwb_amp_prior='uniform', gwb_log_amp_range=[-18,-11],
                vary_white_noise=False, efac_start=1.0,
                include_gwb=False, gwb_switch_weight=0, include_psr_term=False,
                include_rn=False, vary_rn=False, rn_params=[-13.0,1.0], jupyter_notebook=False,
@@ -69,9 +69,21 @@ def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, RJ_weight=0,
         tmin = [p.toas.min() for p in pulsars]
         tmax = [p.toas.max() for p in pulsars]
         Tspan = np.max(tmax) - np.min(tmin)
-        gwb = ext_models.common_red_noise_block(psd='powerlaw', prior=gwb_amp_prior, Tspan=Tspan,
-                                     components=30, gamma_val=13.0/3,
-                                     orf='hd', name='gw')
+        amp_name = 'gw_log10_A'
+        if gwb_amp_prior == 'uniform':
+            log10_Agw = parameter.LinearExp(gwb_log_amp_range[0], gwb_log_amp_range[1])(amp_name)
+        elif gwb_amp_prior == 'log-uniform':
+            log10_Agw = parameter.Uniform(gwb_log_amp_range[0], gwb_log_amp_range[1])(amp_name)
+        
+        gam_name = 'gw_gamma'
+        gamma_val = 13.0/3
+        gamma_gw = parameter.Constant(gamma_val)(gam_name)
+
+        cpl = utils.powerlaw(log10_A=log10_Agw, gamma=gamma_gw)
+        gwb = gp_signals.FourierBasisCommonGP(cpl, utils.hd_orf(), coefficients=False,
+                                              components=30, Tspan=Tspan,
+                                              modes=None, name='gw')
+
         base_model_gwb = base_model + gwb
 
     #setting up the pta object
@@ -163,7 +175,7 @@ def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, RJ_weight=0,
  Temperature ladder is:\n".format(n_chain,c),Ts)
 
     #printitng out the prior used on GWB on/off
-    print("Prior on GWB on/off: {0}%%".format(gwb_on_prior))
+    print("Prior on GWB on/off: {0}%".format(gwb_on_prior*100))
 
    
     #setting up array for the samples
@@ -350,7 +362,7 @@ def gwb_switch_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, va
         
         #turning off ---------------------------------------------------------------------------------------------------------
         if gwb_on==1:
-            #if j==0: print("Turn off")
+            if j==0: print("Turn off")
             samples_current = np.delete(samples[j,i,1:], range(n_source*7,max_n_source*7))
             new_point = np.delete(samples[j,i,1:], range(n_source*7,max_n_source*7))
             old_log_amp = np.copy(new_point[n_source*7+num_noise_params])
@@ -358,8 +370,8 @@ def gwb_switch_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, va
             sampling_parameter = parameter.Uniform(-18, -11)('dummy')
 
             new_point[n_source*7+num_noise_params] = 0.0
-            #if j==0: print(samples_current, new_point)
-            #if j==0: print(ptas[n_source][1].get_lnlikelihood(new_point)/Ts[j], ptas[n_source][1].get_lnprior(new_point), -ptas[n_source][0].get_lnlikelihood(samples_current)/Ts[j], -ptas[n_source][0].get_lnprior(samples_current))
+            if j==0: print(samples_current, new_point)
+            if j==0: print(ptas[n_source][0].get_lnlikelihood(new_point)/Ts[j], ptas[n_source][0].get_lnprior(new_point), -ptas[n_source][1].get_lnlikelihood(samples_current)/Ts[j], -ptas[n_source][1].get_lnprior(samples_current))
 
             log_acc_ratio = ptas[n_source][0].get_lnlikelihood(new_point)/Ts[j]
             log_acc_ratio += ptas[n_source][0].get_lnprior(new_point)
@@ -369,9 +381,9 @@ def gwb_switch_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, va
             acc_ratio = np.exp(log_acc_ratio)*sampling_parameter.get_pdf(old_log_amp)
             #apply on/off prior
             acc_ratio *= (1-gwb_on_prior)/gwb_on_prior
-            #if j==0: print(acc_ratio)
+            if j==0: print(acc_ratio)
             if np.random.uniform()<=acc_ratio:
-                #if j==0: print('wooooow')
+                if j==0: print('wooooow')
                 samples[j,i+1,0] = n_source
                 samples[j,i+1,1:n_source*7+1] = new_point[:n_source*7]
                 #samples[j,i+1,max_n_source*7+1:max_n_source*7+1+len(ptas[n_source].pulsars)*2] = new_point[(n_source+1)*7:(n_source+1)*7+len(ptas[n_source].pulsars)*2]
@@ -382,7 +394,7 @@ def gwb_switch_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, va
                 a_no[0] += 1
         #turning on ----------------------------------------------------------------------------------------------------------
         else:
-            #if j==0: print("Turn on")
+            if j==0: print("Turn on")
             samples_current = np.delete(samples[j,i,1:], range(n_source*7,max_n_source*7))
             new_point = np.delete(samples[j,i,1:], range(n_source*7,max_n_source*7))
             #new_point[n_source*7+num_noise_params] = ptas[0][1].params[num_noise_params].sample()
@@ -390,8 +402,8 @@ def gwb_switch_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, va
             sampling_parameter = parameter.Uniform(-18, -11)('dummy')
             new_log_amp = sampling_parameter.sample()
             new_point[n_source*7+num_noise_params] = new_log_amp
-            #if j==0: print(samples_current,new_point)
-            #if j==0: print(ptas[n_source][1].get_lnlikelihood(new_point)/Ts[j], ptas[n_source][1].get_lnprior(new_point), -ptas[n_source][0].get_lnlikelihood(samples_current)/Ts[j], -ptas[n_source][0].get_lnprior(samples_current))
+            if j==0: print(samples_current,new_point)
+            if j==0: print(ptas[n_source][1].get_lnlikelihood(new_point)/Ts[j], ptas[n_source][1].get_lnprior(new_point), -ptas[n_source][0].get_lnlikelihood(samples_current)/Ts[j], -ptas[n_source][0].get_lnprior(samples_current))
 
             log_acc_ratio = ptas[n_source][1].get_lnlikelihood(new_point)/Ts[j]
             log_acc_ratio += ptas[n_source][1].get_lnprior(new_point)
@@ -401,9 +413,9 @@ def gwb_switch_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, va
             acc_ratio = np.exp(log_acc_ratio)/sampling_parameter.get_pdf(new_log_amp)
             #apply on/off prior
             acc_ratio *= gwb_on_prior/(1-gwb_on_prior)
-            #if j==0: print(acc_ratio)
+            if j==0: print(acc_ratio)
             if np.random.uniform()<=acc_ratio:
-                #if j==0: print('yeeee')
+                if j==0: print('yeeee')
                 samples[j,i+1,0] = n_source
                 samples[j,i+1,1:n_source*7+1] = new_point[:n_source*7]
                 #samples[j,i+1,max_n_source*7+1:max_n_source*7+1+len(ptas[n_source].pulsars)*2] = new_point[(n_source+1)*7:(n_source+1)*7+len(ptas[n_source].pulsars)*2]
@@ -845,10 +857,15 @@ def regular_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, eig, 
             if gwb_on==0:
                 jump_gwb[-1] = 0
             jump = np.array([jump_gwb[int(i-n_source*7-len(ptas[n_source][gwb_on].pulsars))] if i>=n_source*7+len(ptas[n_source][gwb_on].pulsars) and i<n_source*7+num_noise_params+1 else 0.0 for i in range(samples_current.size)])
-            #print('gwb+rn')
-            #print(jump)
+            #if j==0: print('gwb+rn')
+            #if j==0: print(jump)
         
         new_point = samples_current + jump*np.random.normal()
+        #Try draw from prior in RN sometimes
+        #draw_prior_fraction = 0.25
+        #if np.random.uniform()<=draw_prior_fraction:
+        #    new_point[n_source*7+len(ptas[n_source][gwb_on].pulsars):n_source*7+len(ptas[n_source][gwb_on].pulsars)+2] = np.hstack(p.sample() for p in ptas[n_source][gwb_on].params[n_source*7+len(ptas[n_source][gwb_on].pulsars):n_source*7+num_noise_params])
+        #    if j==0: print(new_point)
 
         log_acc_ratio = ptas[n_source][gwb_on].get_lnlikelihood(new_point)/Ts[j]
         log_acc_ratio += ptas[n_source][gwb_on].get_lnprior(new_point)
@@ -856,7 +873,9 @@ def regular_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, eig, 
         log_acc_ratio += -ptas[n_source][gwb_on].get_lnprior(samples_current)
 
         acc_ratio = np.exp(log_acc_ratio)
+        #if j==0: print(acc_ratio)
         if np.random.uniform()<=acc_ratio:
+            #if j==0: print("ohh jeez")
             samples[j,i+1,0] = n_source
             samples[j,i+1,1:n_source*7+1] = new_point[:n_source*7]
             #samples[j,i+1,max_n_source*7+1:max_n_source*7+1+len(ptas[n_source].pulsars)*2] = new_point[n_source*7:n_source*7+len(ptas[n_source].pulsars)*2]
