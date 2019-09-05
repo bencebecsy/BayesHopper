@@ -1059,7 +1059,7 @@ def get_fisher_eigenvectors(params, pta, T_chain=1, epsilon=1e-4, n_source=1, di
             w, v = np.linalg.eig(FISHER)
 
             #filter w for eigenvalues smaller than 100 and set those to 100 -- Neil's trick
-            eig_limit = 100.0
+            eig_limit = 1.0
 
             W = np.where(np.abs(w)>eig_limit, w, eig_limit)
             #print(W)
