@@ -28,7 +28,8 @@ from enterprise_extensions import models as ext_models
 def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, RJ_weight=0,
                regular_weight=3, noise_jump_weight=3, PT_swap_weight=1,
                Fe_proposal_weight=0, fe_file=None, draw_from_prior_weight=0,
-               de_weight=0, prior_recovery=False, cw_amp_prior='uniform', gwb_amp_prior='uniform', gwb_log_amp_range=[-18,-11],
+               de_weight=0, prior_recovery=False, cw_amp_prior='uniform', gwb_amp_prior='uniform', rn_amp_prior='uniform',
+               gwb_log_amp_range=[-18,-11], rn_log_amp_range=[-18,-11],
                vary_white_noise=False, efac_start=1.0,
                include_gwb=False, gwb_switch_weight=0, include_psr_term=False,
                include_rn=False, vary_rn=False, rn_params=[-13.0,1.0], jupyter_notebook=False,
@@ -54,7 +55,17 @@ def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, RJ_weight=0,
         Tspan = np.max(tmax) - np.min(tmin)
         
         if vary_rn:
-            rn = ext_models.common_red_noise_block(prior='uniform', Tspan=Tspan, name='com_rn')
+            #rn = ext_models.common_red_noise_block(prior='uniform', Tspan=Tspan, name='com_rn')
+            amp_name = 'com_rn_log10_A'
+            if rn_amp_prior == 'uniform':
+                log10_Arn = parameter.LinearExp(rn_log_amp_range[0], rn_log_amp_range[1])(amp_name)
+            elif rn_amp_prior == 'log-uniform':
+                log10_Arn = parameter.Uniform(rn_log_amp_range[0], rn_log_amp_range[1])(amp_name)
+            gam_name = 'com_rn_gamma'
+            gamma_rn = parameter.Uniform(0, 7)(gam_name)
+            pl = utils.powerlaw(log10_A=log10_Arn, gamma=gamma_rn)
+            rn = gp_signals.FourierBasisGP(spectrum=pl, coefficients=False, components=30, Tspan=Tspan,
+                                           modes=None, name='com_rn')
         else:
             log10_A = parameter.Constant(rn_params[0])
             gamma = parameter.Constant(rn_params[1])
@@ -370,6 +381,11 @@ def gwb_switch_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, va
             sampling_parameter = parameter.Uniform(-18, -11)('dummy')
 
             new_point[n_source*7+num_noise_params] = 0.0
+
+            #change RN amplitude to help acceptance
+            if np.random.uniform()<=0.5:
+                new_point[n_source*7+num_noise_params-1] = ptas[n_source][0].params[n_source*7+num_noise_params-1].sample()
+
             #if j==0: print(samples_current, new_point)
             #if j==0: print(ptas[n_source][0].get_lnlikelihood(new_point)/Ts[j], ptas[n_source][0].get_lnprior(new_point), -ptas[n_source][1].get_lnlikelihood(samples_current)/Ts[j], -ptas[n_source][1].get_lnprior(samples_current))
 
@@ -402,6 +418,10 @@ def gwb_switch_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, va
             sampling_parameter = parameter.Uniform(-18, -11)('dummy')
             new_log_amp = sampling_parameter.sample()
             new_point[n_source*7+num_noise_params] = new_log_amp
+
+            #change RN amplitude to help acceptance
+            #new_point[n_source*7+num_noise_params-1] = ptas[n_source][0].params[n_source*7+num_noise_params-1].sample()
+
             #if j==0: print(samples_current,new_point)
             #if j==0: print(ptas[n_source][1].get_lnlikelihood(new_point)/Ts[j], ptas[n_source][1].get_lnprior(new_point), -ptas[n_source][0].get_lnlikelihood(samples_current)/Ts[j], -ptas[n_source][0].get_lnprior(samples_current))
 
