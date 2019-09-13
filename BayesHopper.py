@@ -240,7 +240,10 @@ def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, RJ_weight=0,
     for j in range(n_chain):
         #print('wn eigvec calculation')
         #print(n_source)
-        wn_eigvec = get_fisher_eigenvectors(np.delete(samples[j,0,1:], range(n_source*7,max_n_source*7)), ptas[n_source][1], T_chain=Ts[j], n_source=1, dim=len(pulsars), offset=n_source*7)
+        if include_gwb:
+            wn_eigvec = get_fisher_eigenvectors(np.delete(samples[j,0,1:], range(n_source*7,max_n_source*7)), ptas[n_source][1], T_chain=Ts[j], n_source=1, dim=len(pulsars), offset=n_source*7)
+        else:
+            wn_eigvec = get_fisher_eigenvectors(np.delete(samples[j,0,1:], range(n_source*7,max_n_source*7)), ptas[n_source][0], T_chain=Ts[j], n_source=1, dim=len(pulsars), offset=n_source*7)
         #print(wn_eigvec)
         eig_wn[j,:,:] = wn_eigvec[0,:,:]
 
