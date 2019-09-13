@@ -231,7 +231,10 @@ def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, RJ_weight=0,
     eig = np.ones((n_chain, max_n_source, 7, 7))*0.1
     
     #one for GWB and common rn parameters, which we will keep updating
-    eig_gwb_rn = np.ones((n_chain, 3, 3))*0.1
+    if include_gwb:
+        eig_gwb_rn = np.ones((n_chain, 3, 3))*0.1
+    else:
+        eig_gwb_rn = np.ones((n_chain, 2, 2))*0.1
 
     #and one for white noise parameters, which we will not update
     eig_wn = np.ones((n_chain,len(pulsars), len(pulsars)))*0.1
@@ -296,10 +299,10 @@ Draw from prior: {3:.2f}%\nDifferential evolution jump: {4:.2f}%\nNoise jump: {7
                     if n_source!=0:
                         if include_gwb:
                             gwb_on = int(samples[j,i,max_n_source*7+1+num_noise_params]!=0.0)
+                            eigvec_rn = get_fisher_eigenvectors(np.delete(samples[j,i,1:], range(n_source*7,max_n_source*7)), ptas[n_source][gwb_on], T_chain=Ts[j], n_source=1, dim=3, offset=n_source*7+len(pulsars))
                         else:
-                            gwb_on = 0
+                            eigvec_rn = get_fisher_eigenvectors(np.delete(samples[j,i,1:], range(n_source*7,max_n_source*7)), ptas[n_source][0], T_chain=Ts[j], n_source=1, dim=2, offset=n_source*7+len(pulsars))
                         eigenvectors = get_fisher_eigenvectors(np.delete(samples[j,i,1:], range(n_source*7,max_n_source*7)), ptas[n_source][gwb_on], T_chain=Ts[j], n_source=n_source)
-                        eigvec_rn = get_fisher_eigenvectors(np.delete(samples[j,i,1:], range(n_source*7,max_n_source*7)), ptas[n_source][gwb_on], T_chain=Ts[j], n_source=1, dim=3, offset=n_source*7+len(pulsars))
                         if np.all(eigenvectors):
                             eig[j,:n_source,:,:] = eigenvectors
                         if np.all(eigvec_rn):
@@ -307,9 +310,9 @@ Draw from prior: {3:.2f}%\nDifferential evolution jump: {4:.2f}%\nNoise jump: {7
                     else:
                         if include_gwb:
                             gwb_on = int(samples[j,i,max_n_source*7+1+num_noise_params]!=0.0)
+                            eigvec_rn = get_fisher_eigenvectors(np.delete(samples[j,i,1:], range(n_source*7,max_n_source*7)), ptas[n_source][gwb_on], T_chain=Ts[j], n_source=1, dim=3, offset=n_source*7+len(pulsars))
                         else:
-                            gwb_on = 0
-                        eigvec_rn = get_fisher_eigenvectors(np.delete(samples[j,i,1:], range(n_source*7,max_n_source*7)), ptas[n_source][gwb_on], T_chain=Ts[j], n_source=1, dim=3, offset=n_source*7+len(pulsars))
+                            eigvec_rn = get_fisher_eigenvectors(np.delete(samples[j,i,1:], range(n_source*7,max_n_source*7)), ptas[n_source][0], T_chain=Ts[j], n_source=1, dim=2, offset=n_source*7+len(pulsars))
                         #check if eigenvector calculation was succesful
                         #if not, we just keep the initializes eig full of 0.1 values
                         if np.all(eigvec_rn):
@@ -875,11 +878,17 @@ def regular_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, eig, 
             #print('cw')
             #print(jump)
         elif what_to_vary == 'GWB':
-            jump_select = np.random.randint(3)
+            if include_gwb:
+                jump_select = np.random.randint(3)
+            else:
+                jump_select = np.random.randint(2)
             jump_gwb = eig_gwb_rn[j,jump_select,:]
-            if gwb_on==0:
+            if gwb_on==0 and include_gwb:
                 jump_gwb[-1] = 0
-            jump = np.array([jump_gwb[int(i-n_source*7-len(ptas[n_source][gwb_on].pulsars))] if i>=n_source*7+len(ptas[n_source][gwb_on].pulsars) and i<n_source*7+num_noise_params+1 else 0.0 for i in range(samples_current.size)])
+            if include_gwb:
+                jump = np.array([jump_gwb[int(i-n_source*7-len(ptas[n_source][gwb_on].pulsars))] if i>=n_source*7+len(ptas[n_source][gwb_on].pulsars) and i<n_source*7+num_noise_params+1 else 0.0 for i in range(samples_current.size)])
+            else:
+                jump = np.array([jump_gwb[int(i-n_source*7-len(ptas[n_source][gwb_on].pulsars))] if i>=n_source*7+len(ptas[n_source][gwb_on].pulsars) and i<n_source*7+num_noise_params else 0.0 for i in range(samples_current.size)])
             #if j==0: print('gwb+rn')
             #if j==0: print(jump)
         
