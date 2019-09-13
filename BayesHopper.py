@@ -296,11 +296,12 @@ Draw from prior: {3:.2f}%\nDifferential evolution jump: {4:.2f}%\nNoise jump: {7
             if i%(n_fish_update*10)==0:
                 for j in range(n_chain):
                     n_source = int(np.copy(samples[j,i,0]))
-                    gwb_on = int(samples[j,i,max_n_source*7+1+num_noise_params]!=0.0)
                     if n_source!=0:
                         if include_gwb:
+                            gwb_on = int(samples[j,i,max_n_source*7+1+num_noise_params]!=0.0)
                             eigvec_rn = get_fisher_eigenvectors(np.delete(samples[j,i,1:], range(n_source*7,max_n_source*7)), ptas[n_source][gwb_on], T_chain=Ts[j], n_source=1, dim=3, offset=n_source*7+len(pulsars))
                         else:
+                            gwb_on = 0
                             eigvec_rn = get_fisher_eigenvectors(np.delete(samples[j,i,1:], range(n_source*7,max_n_source*7)), ptas[n_source][0], T_chain=Ts[j], n_source=1, dim=2, offset=n_source*7+len(pulsars))
                         eigenvectors = get_fisher_eigenvectors(np.delete(samples[j,i,1:], range(n_source*7,max_n_source*7)), ptas[n_source][gwb_on], T_chain=Ts[j], n_source=n_source)
                         if np.all(eigenvectors):
@@ -308,8 +309,8 @@ Draw from prior: {3:.2f}%\nDifferential evolution jump: {4:.2f}%\nNoise jump: {7
                         if np.all(eigvec_rn):
                             eig_gwb_rn[j,:,:] = eigvec_rn[0,:,:]
                     else:
-                        gwb_on = int(samples[j,i,max_n_source*7+1+num_noise_params]!=0.0)
                         if include_gwb:
+                            gwb_on = int(samples[j,i,max_n_source*7+1+num_noise_params]!=0.0)
                             eigvec_rn = get_fisher_eigenvectors(np.delete(samples[j,i,1:], range(n_source*7,max_n_source*7)), ptas[n_source][gwb_on], T_chain=Ts[j], n_source=1, dim=3, offset=n_source*7+len(pulsars))
                         else:
                             eigvec_rn = get_fisher_eigenvectors(np.delete(samples[j,i,1:], range(n_source*7,max_n_source*7)), ptas[n_source][0], T_chain=Ts[j], n_source=1, dim=2, offset=n_source*7+len(pulsars))
