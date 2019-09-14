@@ -25,7 +25,7 @@ from enterprise_extensions import models as ext_models
 #
 ################################################################################
 
-def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, RJ_weight=0,
+def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, n_source_prior='flat', RJ_weight=0,
                regular_weight=3, noise_jump_weight=3, PT_swap_weight=1,
                Fe_proposal_weight=0, fe_file=None, draw_from_prior_weight=0,
                de_weight=0, prior_recovery=False, cw_amp_prior='uniform', gwb_amp_prior='uniform', rn_amp_prior='uniform',
@@ -34,6 +34,7 @@ def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, RJ_weight=0,
                include_gwb=False, gwb_switch_weight=0, include_psr_term=False,
                include_rn=False, vary_rn=False, rn_params=[-13.0,1.0], jupyter_notebook=False,
                gwb_on_prior=0.5):
+
     #setting up base model
     if vary_white_noise:
         efac = parameter.Uniform(0.01, 10.0)
@@ -186,9 +187,20 @@ def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, RJ_weight=0,
  Temperature ladder is:\n".format(n_chain,c),Ts)
 
     #printitng out the prior used on GWB on/off
-    print("Prior on GWB on/off: {0}%".format(gwb_on_prior*100))
+    if include_gwb:
+        print("Prior on GWB on/off: {0}%".format(gwb_on_prior*100))
 
-   
+    #set up and print out prior on number of sources
+    if max_n_source!=0:
+        if n_source_prior=='flat':
+            n_source_prior = np.ones(max_n_source+1)/(max_n_source+1)
+        else:
+            n_source_prior = np.array(n_source_prior)
+            n_prior_norm = np.sum(n_source_prior)
+            n_source_prior *= 1.0/n_prior_norm
+        print("Prior on number of sources: ", n_source_prior)
+
+
     #setting up array for the samples
     num_params = max_n_source*7+1
     if include_gwb:
@@ -350,7 +362,7 @@ Draw from prior: {3:.2f}%\nDifferential evolution jump: {4:.2f}%\nNoise jump: {7
             #do RJ move
             elif (jump_decide<swap_probability+fe_proposal_probability+
                  draw_from_prior_probability+de_probability+RJ_probability):
-                do_rj_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, fe_file, rj_record, vary_white_noise, include_gwb, num_noise_params)
+                do_rj_move(n_chain, max_n_source, n_source_prior, ptas, samples, i, Ts, a_yes, a_no, fe_file, rj_record, vary_white_noise, include_gwb, num_noise_params)
             #do GWB switch move
             elif (jump_decide<swap_probability+fe_proposal_probability+
                  draw_from_prior_probability+de_probability+RJ_probability+gwb_switch_probability):
@@ -457,7 +469,7 @@ def gwb_switch_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, va
 #REVERSIBLE-JUMP (RJ, aka TRANS-DIMENSIONAL) MOVE
 #
 ################################################################################
-def do_rj_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, fe_file, rj_record, vary_white_noise, include_gwb, num_noise_params):
+def do_rj_move(n_chain, max_n_source, n_source_prior, ptas, samples, i, Ts, a_yes, a_no, fe_file, rj_record, vary_white_noise, include_gwb, num_noise_params):
     for j in range(n_chain):
         n_source = int(np.copy(samples[j,i,0]))
 
@@ -543,6 +555,8 @@ def do_rj_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, fe_file
                 acc_ratio *= 0.5
             elif n_source==max_n_source-1:
                 acc_ratio *= 2.0
+            #accounting for n_source prior
+            acc_ratio *= n_source_prior[int(n_source)+1]/n_source_prior[int(n_source)]
             if np.random.uniform()<=acc_ratio:
                 samples[j,i+1,0] = n_source+1
                 samples[j,i+1,1:(n_source+1)*7+1] = new_point[:(n_source+1)*7]
@@ -608,6 +622,8 @@ def do_rj_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, fe_file
                 acc_ratio *= 2.0
             elif n_source==max_n_source:
                 acc_ratio *= 0.5
+            #accounting for n_source prior
+            acc_ratio *= n_source_prior[int(n_source)-1]/n_source_prior[int(n_source)]
             if np.random.uniform()<=acc_ratio:
                 samples[j,i+1,0] = n_source-1
                 samples[j,i+1,1:(n_source-1)*7+1] = new_point[:(n_source-1)*7]
