@@ -29,7 +29,7 @@ def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, n_source_prior='flat'
                regular_weight=3, noise_jump_weight=3, PT_swap_weight=1,
                Fe_proposal_weight=0, fe_file=None, draw_from_prior_weight=0,
                de_weight=0, prior_recovery=False, cw_amp_prior='uniform', gwb_amp_prior='uniform', rn_amp_prior='uniform',
-               gwb_log_amp_range=[-18,-11], rn_log_amp_range=[-18,-11],
+               gwb_log_amp_range=[-18,-11], rn_log_amp_range=[-18,-11], cw_log_amp_range=[-18,-11],
                vary_white_noise=False, efac_start=1.0,
                include_gwb=False, gwb_switch_weight=0, include_psr_term=False,
                include_rn=False, vary_rn=False, rn_params=[-13.0,1.0], jupyter_notebook=False,
@@ -109,9 +109,9 @@ def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, n_source_prior='flat'
         psi = parameter.Uniform(0, np.pi)(str(i)+'_'+'psi')
         cos_inc = parameter.Uniform(-1, 1)(str(i)+'_'+'cos_inc')
         if cw_amp_prior == 'log-uniform':
-            log10_h = parameter.Uniform(-18, -11)(str(i)+'_'+'log10_h')
+            log10_h = parameter.Uniform(cw_log_amp_range[0], cw_log_amp_range[1])(str(i)+'_'+'log10_h')
         elif cw_amp_prior == 'uniform':
-            log10_h = parameter.LinearExp(-18, -11)(str(i)+'_'+'log10_h')
+            log10_h = parameter.LinearExp(cw_log_amp_range[0], cw_log_amp_range[1])(str(i)+'_'+'log10_h')
         else:
             print("CW amplitude prior of {0} not available".format(cw_amp_prior))
         cw_wf = models.cw_delay(cos_gwtheta=cos_gwtheta, gwphi=gwphi, log10_mc=log10_mc,
