@@ -244,12 +244,12 @@ def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, n_source_prior='flat'
     
     #one for GWB and common rn parameters, which we will keep updating
     if include_gwb:
-        eig_gwb_rn = np.ones((n_chain, 3, 3))*0.1
+        eig_gwb_rn = np.broadcast_to( np.array([[1.0,0,0], [0,0.3,0], [0,0,0.3]]), (n_chain, 3, 3)).copy()
     else:
-        eig_gwb_rn = np.ones((n_chain, 2, 2))*0.1
+        eig_gwb_rn = np.broadcast_to( np.array([[1.0,0], [0,0.3]]), (n_chain, 2, 2)).copy()
 
     #and one for white noise parameters, which we will not update
-    eig_wn = np.ones((n_chain,len(pulsars), len(pulsars)))*0.1
+    eig_wn = np.broadcast_to(np.eye(len(pulsars))*0.1, (n_chain,len(pulsars), len(pulsars)) ).copy()
  
     #calculate wn eigenvectors
     for j in range(n_chain):
@@ -907,6 +907,7 @@ def regular_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, eig, 
             else:
                 jump = np.array([jump_gwb[int(i-n_source*7-len(ptas[n_source][gwb_on].pulsars))] if i>=n_source*7+len(ptas[n_source][gwb_on].pulsars) and i<n_source*7+num_noise_params else 0.0 for i in range(samples_current.size)])
             #if j==0: print('gwb+rn')
+            #if j==0: print(i)
             #if j==0: print(jump)
         
         new_point = samples_current + jump*np.random.normal()
