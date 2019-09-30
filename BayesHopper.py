@@ -553,7 +553,7 @@ def do_rj_move(n_chain, max_n_source, n_source_prior, ptas, samples, i, Ts, a_ye
             #correction close to edge based on eqs. (40) and (41) of Sambridge et al. Geophys J. Int. (2006) 167, 528-542
             if n_source==0:
                 acc_ratio *= 0.5
-            elif n_source==max_n_source-1:
+            if n_source==max_n_source-1:
                 acc_ratio *= 2.0
             #accounting for n_source prior
             acc_ratio *= n_source_prior[int(n_source)+1]/n_source_prior[int(n_source)]
@@ -620,7 +620,7 @@ def do_rj_move(n_chain, max_n_source, n_source_prior, ptas, samples, i, Ts, a_ye
             #correction close to edge based on eqs. (40) and (41) of Sambridge et al. Geophys J. Int. (2006) 167, 528-542
             if n_source==1:
                 acc_ratio *= 2.0
-            elif n_source==max_n_source:
+            if n_source==max_n_source:
                 acc_ratio *= 0.5
             #accounting for n_source prior
             acc_ratio *= n_source_prior[int(n_source)-1]/n_source_prior[int(n_source)]
