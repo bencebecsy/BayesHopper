@@ -26,7 +26,7 @@ from enterprise_extensions import models as ext_models
 ################################################################################
 
 def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, n_source_prior='flat', RJ_weight=0,
-               regular_weight=3, noise_jump_weight=3, PT_swap_weight=1,
+               regular_weight=3, noise_jump_weight=3, PT_swap_weight=1, T_ladder = None,
                Fe_proposal_weight=0, fe_file=None, draw_from_prior_weight=0,
                de_weight=0, prior_recovery=False, cw_amp_prior='uniform', gwb_amp_prior='uniform', rn_amp_prior='uniform',
                gwb_log_amp_range=[-18,-11], rn_log_amp_range=[-18,-11], cw_log_amp_range=[-18,-11],
@@ -174,18 +174,24 @@ def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, n_source_prior='flat'
     #add current sample to de history file every n_de_history step
     n_de_history = 10
 
+    #setting up temperature ladder
+    if T_ladder is None:
+        #using geometric spacing
+        c = T_max**(1.0/(n_chain-1))
+        Ts = c**np.arange(n_chain)
+        print("Using {0} temperature chains with a geometric spacing of {1:.3f}.\
+ Temperature ladder is:\n".format(n_chain,c),Ts)
+    else:
+        Ts = np.array(T_ladder)
+        n_chain = Ts.size
+        print("Using {0} temperature chains with custom spacing: ".format(n_chain),Ts)
+ 
     #array to hold Differential Evolution history
     history_size = 1000    
     de_history = np.zeros((n_chain, history_size, n_source*7+1))
     #start DE after de_start_iter iterations
     de_start_iter = 100
-
-    #setting up temperature ladder (geometric spacing)
-    c = T_max**(1.0/(n_chain-1))
-    Ts = c**np.arange(n_chain)
-    print("Using {0} temperature chains with a geometric spacing of {1:.3f}.\
- Temperature ladder is:\n".format(n_chain,c),Ts)
-
+       
     #printitng out the prior used on GWB on/off
     if include_gwb:
         print("Prior on GWB on/off: {0}%".format(gwb_on_prior*100))
