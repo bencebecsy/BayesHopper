@@ -25,7 +25,7 @@ from enterprise_extensions import models as ext_models
 #
 ################################################################################
 
-def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, n_source_prior='flat', RJ_weight=0,
+def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, n_source_prior='flat', n_source_start='random', RJ_weight=0,
                regular_weight=3, noise_jump_weight=3, PT_swap_weight=1, T_ladder = None,
                Fe_proposal_weight=0, fe_file=None, draw_from_prior_weight=0,
                de_weight=0, prior_recovery=False, cw_amp_prior='uniform', gwb_amp_prior='uniform', rn_amp_prior='uniform',
@@ -226,7 +226,10 @@ def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, n_source_prior='flat'
 
     #filling first sample with random draw
     for j in range(n_chain):
-        n_source = np.random.choice(max_n_source+1)
+        if n_source_start is 'random':
+            n_source = np.random.choice(max_n_source+1)
+        else:
+            n_source = n_source_start
         samples[j,0,0] = n_source
         #print(samples[0,0,:])
         print(n_source)
