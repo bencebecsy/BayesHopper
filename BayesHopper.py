@@ -1037,14 +1037,17 @@ def do_pt_swap(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, swap_re
 #FISHER EIGENVALUE CALCULATION
 #
 ################################################################################
-def get_fisher_eigenvectors(params, pta, T_chain=1, epsilon=1e-4, n_source=1, dim=7, offset=0):
+def get_fisher_eigenvectors(params, pta, T_chain=1, epsilon=1e-4, n_source=1, dim=7, offset=0, use_prior=True):
     fisher = np.zeros((n_source,dim,dim))
     eig = []
 
     #print(params)
 
     #lnlikelihood at specified point
-    nn = pta.get_lnlikelihood(params)
+    if use_prior:
+        nn = pta.get_lnlikelihood(params) + pta.get_lnprior(params)
+    else:
+        nn = pta.get_lnlikelihood(params)
     
     
     for k in range(n_source):
@@ -1059,8 +1062,12 @@ def get_fisher_eigenvectors(params, pta, T_chain=1, epsilon=1e-4, n_source=1, di
             #print(paramsPP)
             
             #lnlikelihood at +-epsilon positions
-            pp = pta.get_lnlikelihood(paramsPP)
-            mm = pta.get_lnlikelihood(paramsMM)
+            if use_prior:
+                pp = pta.get_lnlikelihood(paramsPP) + pta.get_lnprior(paramsPP)
+                mm = pta.get_lnlikelihood(paramsMM) + pta.get_lnprior(paramsMM)
+            else:
+                pp = pta.get_lnlikelihood(paramsPP)
+                mm = pta.get_lnlikelihood(paramsMM)
 
             #print(pp, nn, mm)
             
@@ -1090,10 +1097,16 @@ def get_fisher_eigenvectors(params, pta, T_chain=1, epsilon=1e-4, n_source=1, di
                 paramsMP[offset+j+k*dim] += epsilon
 
                 #lnlikelihood at those positions
-                pp = pta.get_lnlikelihood(paramsPP)
-                mm = pta.get_lnlikelihood(paramsMM)
-                pm = pta.get_lnlikelihood(paramsPM)
-                mp = pta.get_lnlikelihood(paramsMP)
+                if use_prior:
+                    pp = pta.get_lnlikelihood(paramsPP) + pta.get_lnprior(paramsPP)
+                    mm = pta.get_lnlikelihood(paramsMM) + pta.get_lnprior(paramsMM)
+                    pm = pta.get_lnlikelihood(paramsPM) + pta.get_lnprior(paramsPM)
+                    mp = pta.get_lnlikelihood(paramsMP) + pta.get_lnprior(paramsMP)
+                else:
+                    pp = pta.get_lnlikelihood(paramsPP)
+                    mm = pta.get_lnlikelihood(paramsMM)
+                    pm = pta.get_lnlikelihood(paramsPM)
+                    mp = pta.get_lnlikelihood(paramsMP)
 
                 #calculate off-diagonal elements of the Hessian from a central finite element scheme
                 #note the minus sign compared to the regular Hessian
