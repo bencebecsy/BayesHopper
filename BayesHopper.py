@@ -392,7 +392,7 @@ Draw from prior: {3:.2f}%\nDifferential evolution jump: {4:.2f}%\nNoise jump: {7
 #GWB SWITCH (ON/OFF) MOVE
 #
 ################################################################################
-def gwb_switch_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, vary_white_noise, include_gwb, num_noise_params, gwb_on_prior):
+def gwb_switch_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, vary_white_noise, include_gwb, num_noise_params, gwb_on_prior, gwb_log_amp_range):
     if not include_gwb:
        raise Exception("include_qwb must be True to use this move")
     for j in range(n_chain):
@@ -406,7 +406,7 @@ def gwb_switch_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, va
             new_point = np.delete(samples[j,i,1:], range(n_source*7,max_n_source*7))
             old_log_amp = np.copy(new_point[n_source*7+num_noise_params])
             #make a dummy enterprise parameter which we will use for getting the proposal density at the value of the old amplitude
-            sampling_parameter = parameter.Uniform(-18, -11)('dummy')
+            sampling_parameter = parameter.Uniform(gwb_log_amp_range[0], gwb_log_amp_range[1])('dummy')
 
             new_point[n_source*7+num_noise_params] = 0.0
 
@@ -443,7 +443,7 @@ def gwb_switch_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, va
             new_point = np.delete(samples[j,i,1:], range(n_source*7,max_n_source*7))
             #new_point[n_source*7+num_noise_params] = ptas[0][1].params[num_noise_params].sample()
             #make a dummy enterprise parameter which we will use for drawing from a log-uniform A distribution
-            sampling_parameter = parameter.Uniform(-18, -11)('dummy')
+            sampling_parameter = parameter.Uniform(gwb_log_amp_range[0], gwb_log_amp_range[1])('dummy')
             new_log_amp = sampling_parameter.sample()
             new_point[n_source*7+num_noise_params] = new_log_amp
 
