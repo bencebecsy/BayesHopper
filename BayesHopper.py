@@ -763,8 +763,8 @@ def do_fe_global_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, 
 
         accepted = False
         while accepted==False:
-            f_new = 10**(ptas[-1][gwb_on].params[3].sample())
-            f_idx = (np.abs(freqs - f_new)).argmin()
+            log_f_new = ptas[-1][gwb_on].params[3].sample()
+            f_idx = (np.abs(np.log10(freqs) - log_f_new)).argmin()
 
             gw_theta = np.arccos(ptas[-1][gwb_on].params[0].sample())
             gw_phi = ptas[-1][gwb_on].params[2].sample()
@@ -797,7 +797,7 @@ def do_fe_global_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, 
         samples_current = np.delete(samples[j,i,1:], range(n_source*7,max_n_source*7))# [j,i,1:n_source*7+1])
         #print(samples_current)
         new_point = np.copy(samples_current)
-        new_point[source_select*7:(source_select+1)*7] = np.array([np.cos(gw_theta), cos_inc, gw_phi, np.log10(f_new),
+        new_point[source_select*7:(source_select+1)*7] = np.array([np.cos(gw_theta), cos_inc, gw_phi, log_f_new,
                                                                                log10_h, phase0, psi])
         #print(new_point)
         if fe_new_point>fe_limit:
