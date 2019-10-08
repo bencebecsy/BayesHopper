@@ -827,23 +827,29 @@ def do_fe_global_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, 
         log10_h_old = np.log10(h_max[f_idx_old, hp_idx_old])
         
         old_params_fe = [cos_inc_old, log10_h_old, phase0_old, psi_old]
-        prior_ranges = [2.0, 7.0, 2.0*np.pi, np.pi]
         
         new_params = [cos_inc, log10_h, phase0, psi]
         new_params_fe = [np.cos(inc_max[f_idx, hp_idx]), np.log10(h_max[f_idx, hp_idx]),
                         phase0_max[f_idx, hp_idx], psi_max[f_idx, hp_idx]]
         
         hastings_extra_factor=1.0
-        for k, prior_range, old_param_fe, new_param, new_param_fe in zip([1,4,5,6], prior_ranges, old_params_fe, new_params, new_params_fe):
+        for k, old_param_fe, new_param, new_param_fe in zip([1,4,5,6], old_params_fe, new_params, new_params_fe):
             old_param = samples[j,i,1+k+source_select*7]
             #True if the ith sample was at a place where we could jump with a deterministic jump
             #False otherwise            
             det_old = np.abs(old_param-old_param_fe)<alpha
             det_new = np.abs(new_param-new_param_fe)<alpha
+            #get priors for old and new points
+            prior_old = ptas[n_source][gwb_on].params[k].get_pdf(old_param)
+            prior_new = ptas[n_source][gwb_on].params[k].get_pdf(new_param)
             if det_new and not det_old: #from non-det to det
-                hastings_extra_factor *= 1.0/( p_det/(1-p_det)*prior_range/(2*alpha) + 1 )
+                hastings_extra_factor *= ( (1-p_det)*prior_old ) / ( (1-p_det)*prior_new + p_det/(2*alpha) )
             elif not det_new and det_old: #from det to non-det
-                hastings_extra_factor *= p_det/(1-p_det)*prior_range/(2*alpha) + 1
+                hastings_extra_factor *= ( (1-p_det)*prior_old + p_det/(2*alpha) ) / ( (1-p_det)*prior_new )
+            elif det_new and det_old: #from det to det
+                hastings_extra_factor *= ( (1-p_det)*prior_old + p_det/(2*alpha) ) / ( (1-p_det)*prior_new + p_det/(2*alpha) )
+            elif not det_new and not det_old: #from non-det to non-det
+                hastings_extra_factor *= ( (1-p_det)*prior_old ) / ( (1-p_det)*prior_new )
 
         acc_ratio = np.exp(log_acc_ratio)*(fe_old_point/fe_new_point)*hastings_extra_factor
         #not needed (most likely): samples[j,i+1,n_source*7+1:] = np.zeros((max_n_source-n_source)*7)
