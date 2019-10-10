@@ -1227,24 +1227,34 @@ def transdim_postprocess(samples, separation_method='freq', f_tol=0.05, max_n_so
     if separation_method=='freq':
         freqs = []
         sample_dict = {}
+        source_on_idxs = {}
         for i in range(N):
             for j,f in enumerate(samples[i,4:max_n_source*7:7]):
                 if not np.isnan(f):
                     new = True
+                    f_diff = []
                     for idx, freq in enumerate(freqs):
                         if np.abs(f-freq)<f_tol:
                             new = False
-                            freq_idx = idx
+                            f_diff.append((np.abs(f-freq), idx))
                     if new:
                         freqs.append(f)
                         sample_dict[len(freqs)-1] = np.array([list(samples[i,1+7*j:1+7*(j+1)]),])
+                        source_on_idxs[len(freqs)-1] = [i,]
                     else:
-                        sample_dict[freq_idx] = np.append(sample_dict[freq_idx], np.array([list(samples[i,1+7*j:1+7*(j+1)]),]), axis=0)                 
+                        min_diff = np.inf
+                        for diff, idx in f_diff:
+                            if diff < min_diff:
+                                min_diff = diff
+                                freq_idx = idx
+                        freqs[freq_idx] += (f - freqs[freq_idx]) / (len(source_on_idxs[freq_idx]) + 1)
+                        sample_dict[freq_idx] = np.append(sample_dict[freq_idx], np.array([list(samples[i,1+7*j:1+7*(j+1)]),]), axis=0)
+                        source_on_idxs[freq_idx].append(i)
     elif separation_method=='match':
         print("Not implemented yet")
     else:
         print("Not understood separation method: {0}".format(separation_method))
     
-    return sample_dict
+    return sample_dict, source_on_idxs
 
 
