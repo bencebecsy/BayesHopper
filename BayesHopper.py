@@ -1221,7 +1221,7 @@ def get_prior_recovery_pta(pta):
 #
 ################################################################################
 
-def transdim_postprocess(samples, separation_method='freq', f_tol=0.05, max_n_source=4):
+def transdim_postprocess(samples, separation_method='freq', f_tol=0.05, max_n_source=4, status_every=1000):
     N = samples.shape[0]
     
     if separation_method=='freq':
@@ -1229,6 +1229,8 @@ def transdim_postprocess(samples, separation_method='freq', f_tol=0.05, max_n_so
         sample_dict = {}
         source_on_idxs = {}
         for i in range(N):
+            if i%status_every==0:
+                print('Progress: {0:2.2f}% '.format(i/N*100))
             for j,f in enumerate(samples[i,4:max_n_source*7:7]):
                 if not np.isnan(f):
                     new = True
