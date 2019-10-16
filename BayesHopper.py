@@ -550,9 +550,12 @@ def do_rj_move(n_chain, max_n_source, n_source_prior, ptas, samples, i, Ts, a_ye
 
             healpy_pixel_area = hp.nside2pixarea(hp.get_nside(fe))
             log10f_resolution = np.diff(np.log10(freqs))[0]
-            norm = np.sum(fe)*healpy_pixel_area*log10f_resolution
-            #correct for the fact that the number of frequency bins are 1 fewer than the number of bin edges
-            norm *= (freqs.size-1)/freqs.size
+            #first sum over sky location only
+            fe_f = np.sum(fe, axis=1)
+            #than sum over frequency, but only add half of the first and last bin, because their bin size is half of the others
+            fe_sum = np.sum(fe_f[1:-1])+0.5*(fe_f[0] + fe_f[-1])
+            #then the normalization constant is
+            norm = fe_sum*healpy_pixel_area*log10f_resolution
 
             #normalization
             fe_new_point_normalized = fe_new_point/norm
@@ -609,9 +612,12 @@ def do_rj_move(n_chain, max_n_source, n_source_prior, ptas, samples, i, Ts, a_ye
             fe_old_point = fe[f_idx_old, hp_idx_old]
             healpy_pixel_area = hp.nside2pixarea(hp.get_nside(fe))
             log10f_resolution = np.diff(np.log10(freqs))[0]
-            norm = np.sum(fe)*healpy_pixel_area*log10f_resolution
-            #short-term hacky solution
-            norm *= 399/400
+            #first sum over sky location only
+            fe_f = np.sum(fe, axis=1)
+            #than sum over frequency, but only add half of the first and last bin, because their bin size is half of the others
+            fe_sum = np.sum(fe_f[1:-1])+0.5*(fe_f[0] + fe_f[-1])
+            #then the normalization constant is
+            norm = fe_sum*healpy_pixel_area*log10f_resolution
             
             #normalization
             fe_old_point_normalized = fe_old_point/norm
