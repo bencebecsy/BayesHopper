@@ -551,6 +551,8 @@ def do_rj_move(n_chain, max_n_source, n_source_prior, ptas, samples, i, Ts, a_ye
             healpy_pixel_area = hp.nside2pixarea(hp.get_nside(fe))
             log10f_resolution = np.diff(np.log10(freqs))[0]
             norm = np.sum(fe)*healpy_pixel_area*log10f_resolution
+            #correct for the fact that the number of frequency bins are 1 fewer than the number of bin edges
+            norm *= (freqs.size-1)/freqs.size
 
             #normalization
             fe_new_point_normalized = fe_new_point/norm
@@ -608,6 +610,8 @@ def do_rj_move(n_chain, max_n_source, n_source_prior, ptas, samples, i, Ts, a_ye
             healpy_pixel_area = hp.nside2pixarea(hp.get_nside(fe))
             log10f_resolution = np.diff(np.log10(freqs))[0]
             norm = np.sum(fe)*healpy_pixel_area*log10f_resolution
+            #short-term hacky solution
+            norm *= 399/400
             
             #normalization
             fe_old_point_normalized = fe_old_point/norm
