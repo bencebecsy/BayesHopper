@@ -843,7 +843,7 @@ def do_fe_global_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, 
             #check if deterministic top-hat hits any boundaries
             #get prior boundaries
             upper_pb = float(ptas[n_source][gwb_on].params[k]._typename.split('=')[2][:-1])
-            lower_pb = float(ptas[n_source][gwb_on].params[k].._typename.split('=')[1].split(',')[0])
+            lower_pb = float(ptas[n_source][gwb_on].params[k]._typename.split('=')[1].split(',')[0])
 
             #for new params
             upper_diff_new = upper_pb - new_param_fe
