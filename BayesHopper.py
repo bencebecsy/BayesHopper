@@ -840,6 +840,36 @@ def do_fe_global_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, 
         hastings_extra_factor=1.0
         for k, old_param_fe, new_param, new_param_fe in zip([1,4,5,6], old_params_fe, new_params, new_params_fe):
             old_param = samples[j,i,1+k+source_select*7]
+            #check if deterministic top-hat hits any boundaries
+            #get prior boundaries
+            upper_pb = float(ptas[n_source][gwb_on].params[k]._typename.split('=')[2][:-1])
+            lower_pb = float(ptas[n_source][gwb_on].params[k].._typename.split('=')[1].split(',')[0])
+
+            #for new params
+            upper_diff_new = upper_pb - new_param_fe
+            lower_diff_new = new_param_fe - lower_pb
+            if np.abs(upper_diff_new)<alpha:
+                prior_det_new = 1/(alpha+upper_diff_new)
+                print("new hit upper")
+            elif np.abs(lower_diff_new)<alpha:
+                prior_det_new = 1/(alpha+lower_diff_new)
+                print("new hit lower")
+            else:
+                prior_det_new = 1/(2*alpha)
+
+            #for old params
+            upper_diff_old = upper_pb - old_param_fe
+            lower_diff_old = old_param_fe - lower_pb
+            if np.abs(upper_diff_old)<alpha:
+                prior_det_old = 1/(alpha+upper_diff_old)
+                print("old hit upper")
+            elif np.abs(lower_diff_old)<alpha:
+                prior_det_old = 1/(alpha+lower_diff_old)
+                print("old hit lower")
+            else:
+                prior_det_old = 1/(2*alpha)
+
+            
             #True if the ith sample was at a place where we could jump with a deterministic jump
             #False otherwise            
             det_old = np.abs(old_param-old_param_fe)<alpha
@@ -848,11 +878,11 @@ def do_fe_global_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, 
             prior_old = ptas[n_source][gwb_on].params[k].get_pdf(old_param)
             prior_new = ptas[n_source][gwb_on].params[k].get_pdf(new_param)
             if det_new and not det_old: #from non-det to det
-                hastings_extra_factor *= ( (1-p_det)*prior_old ) / ( (1-p_det)*prior_new + p_det/(2*alpha) )
+                hastings_extra_factor *= ( (1-p_det)*prior_old ) / ( (1-p_det)*prior_new + p_det*prior_det_new )
             elif not det_new and det_old: #from det to non-det
-                hastings_extra_factor *= ( (1-p_det)*prior_old + p_det/(2*alpha) ) / ( (1-p_det)*prior_new )
+                hastings_extra_factor *= ( (1-p_det)*prior_old + p_det*prior_det_old ) / ( (1-p_det)*prior_new )
             elif det_new and det_old: #from det to det
-                hastings_extra_factor *= ( (1-p_det)*prior_old + p_det/(2*alpha) ) / ( (1-p_det)*prior_new + p_det/(2*alpha) )
+                hastings_extra_factor *= ( (1-p_det)*prior_old + p_det*prior_det_old ) / ( (1-p_det)*prior_new + p_det*prior_det_new )
             elif not det_new and not det_old: #from non-det to non-det
                 hastings_extra_factor *= ( (1-p_det)*prior_old ) / ( (1-p_det)*prior_new )
 
