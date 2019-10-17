@@ -206,6 +206,11 @@ def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, n_source_prior='flat'
             n_source_prior *= 1.0/n_prior_norm
         print("Prior on number of sources: ", n_source_prior)
 
+    #set up parameters for the Fe proposal
+    #probability of deterministic move
+    p_det = 0.5
+    #half width of deterministic proposal top-hat function
+    alpha = 0.1
 
     #setting up array for the samples
     num_params = max_n_source*7+1
@@ -360,7 +365,7 @@ Draw from prior: {3:.2f}%\nDifferential evolution jump: {4:.2f}%\nNoise jump: {7
                 do_pt_swap(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, swap_record, vary_white_noise, include_gwb, num_noise_params)
             #global proposal based on Fe-statistic
             elif jump_decide<swap_probability+fe_proposal_probability:
-                do_fe_global_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, fe_file, vary_white_noise, include_gwb, num_noise_params)
+                do_fe_global_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, fe_file, vary_white_noise, include_gwb, num_noise_params, p_det, alpha)
             #draw from prior move
             elif jump_decide<swap_probability+fe_proposal_probability+draw_from_prior_probability:
                 do_draw_from_prior_move(n_chain, n_source, pta, samples, i, Ts, a_yes, a_no)
@@ -371,7 +376,8 @@ Draw from prior: {3:.2f}%\nDifferential evolution jump: {4:.2f}%\nNoise jump: {7
             #do RJ move
             elif (jump_decide<swap_probability+fe_proposal_probability+
                  draw_from_prior_probability+de_probability+RJ_probability):
-                do_rj_move(n_chain, max_n_source, n_source_prior, ptas, samples, i, Ts, a_yes, a_no, fe_file, rj_record, vary_white_noise, include_gwb, num_noise_params)
+                do_rj_move(n_chain, max_n_source, n_source_prior, ptas, samples, i, Ts, a_yes, a_no, fe_file, rj_record, vary_white_noise, include_gwb, num_noise_params,
+                        fe_proposal_probability, p_det, alpha)
             #do GWB switch move
             elif (jump_decide<swap_probability+fe_proposal_probability+
                  draw_from_prior_probability+de_probability+RJ_probability+gwb_switch_probability):
@@ -478,7 +484,7 @@ def gwb_switch_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, va
 #REVERSIBLE-JUMP (RJ, aka TRANS-DIMENSIONAL) MOVE
 #
 ################################################################################
-def do_rj_move(n_chain, max_n_source, n_source_prior, ptas, samples, i, Ts, a_yes, a_no, fe_file, rj_record, vary_white_noise, include_gwb, num_noise_params):
+def do_rj_move(n_chain, max_n_source, n_source_prior, ptas, samples, i, Ts, a_yes, a_no, fe_file, rj_record, vary_white_noise, include_gwb, num_noise_params, p_fe, p_det, alpha):
     for j in range(n_chain):
         n_source = int(np.copy(samples[j,i,0]))
 
@@ -622,15 +628,46 @@ def do_rj_move(n_chain, max_n_source, n_source_prior, ptas, samples, i, Ts, a_ye
             #normalization
             fe_old_point_normalized = fe_old_point/norm
 
-            cos_inc = samples[j,i,1+remove_index*7+1]
-            psi = samples[j,i,1+remove_index*7+6]
-            phase0 = samples[j,i,1+remove_index*7+5]
-            log10_h = samples[j,i,1+remove_index*7+4]
+            cos_inc_old = np.cos(inc_max[f_idx_old, hp_idx_old])
+            psi_old = psi_max[f_idx_old, hp_idx_old]
+            phase0_old = phase0_max[f_idx_old, hp_idx_old]
+            log10_h_old = np.log10(h_max[f_idx_old, hp_idx_old])
 
-            prior_ext = (ptas[-1][gwb_on].params[1].get_pdf(cos_inc) * ptas[-1][gwb_on].params[6].get_pdf(psi) *
-                         ptas[-1][gwb_on].params[5].get_pdf(phase0) * ptas[-1][gwb_on].params[4].get_pdf(log10_h))
+            old_params_fe = [cos_inc_old, log10_h_old, phase0_old, psi_old]
 
-            acc_ratio = np.exp(log_acc_ratio)*fe_old_point_normalized*prior_ext
+            #calculate corrected prior_ext to account for the fact that the source we remove might have been moved there by an Fe move
+            prior_ext_corr = 1.0
+            for k, old_param_fe in zip([1,4,5,6], old_params_fe):
+                old_param = samples[j,i,1+k+remove_index*7]
+                #check if deterministic top-hat hits any boundaries
+                #get prior boundaries
+                upper_pb = float(ptas[n_source][gwb_on].params[k]._typename.split('=')[2][:-1])
+                lower_pb = float(ptas[n_source][gwb_on].params[k]._typename.split('=')[1].split(',')[0])
+                upper_diff = upper_pb - old_param_fe
+                lower_diff = old_param_fe - lower_pb
+                if np.abs(upper_diff)<alpha:
+                    prior_det = 1/(alpha+upper_diff)
+                elif np.abs(lower_diff)<alpha:
+                    prior_det = 1/(alpha+lower_diff)
+                else:
+                    prior_det = 1/(2*alpha)
+                #True if the ith sample was at a place where we could jump with a deterministic jump
+                #False otherwise
+                #det_old = np.abs(old_param-old_param_fe)<alpha
+                #get prior for old params
+                prior_old = ptas[n_source][gwb_on].params[k].get_pdf(old_param)
+
+                if False:#det_old:
+                    p_det_indet = p_fe*p_det / (p_fe*p_det + (1-p_fe*p_det)*prior_old/prior_det)
+                    prior_ext_corr *= (1-p_det_indet)*prior_old + p_det_indet*prior_det
+                    print("Removing from det")
+                    print("p(det| in det)= ",p_det_indet)
+                    print("ratio= ", ((1-p_det_indet)*prior_old + p_det_indet*prior_det)/prior_old)
+                else:
+                    prior_ext_corr *= prior_old
+                    #print("Removing from non-det")
+
+            acc_ratio = np.exp(log_acc_ratio)*fe_old_point_normalized*prior_ext_corr
             #correction close to edge based on eqs. (40) and (41) of Sambridge et al. Geophys J. Int. (2006) 167, 528-542
             if n_source==1:
                 acc_ratio *= 2.0
@@ -729,7 +766,7 @@ def do_draw_from_prior_move(n_chain, n_source, pta, samples, i, Ts, a_yes, a_no)
 #
 ################################################################################
 
-def do_fe_global_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, fe_file, vary_white_noise, include_gwb, num_noise_params):    
+def do_fe_global_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, fe_file, vary_white_noise, include_gwb, num_noise_paramsi, p_det, alpha):    
     if fe_file==None:
         raise Exception("Fe-statistics data file is needed for Fe global propsals")
     npzfile = np.load(fe_file)
@@ -743,9 +780,9 @@ def do_fe_global_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, 
     #ndim = n_source*7
        
     #set probability of deterministic vs flat proposal in extrinsic parameters
-    p_det = 0.5
+    #p_det = 0.5
     #set width of deterministic proposal
-    alpha = 0.1
+    #alpha = 0.1
 
     #set limit used for rejection sampling below
     fe_limit = np.max(fe)
@@ -848,6 +885,9 @@ def do_fe_global_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, 
             #for new params
             upper_diff_new = upper_pb - new_param_fe
             lower_diff_new = new_param_fe - lower_pb
+            #print('-'*10)
+            #print(new_param_fe)
+            #print(upper_diff_new, lower_diff_new)
             if np.abs(upper_diff_new)<alpha:
                 prior_det_new = 1/(alpha+upper_diff_new)
                 print("new hit upper")
@@ -860,6 +900,7 @@ def do_fe_global_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, 
             #for old params
             upper_diff_old = upper_pb - old_param_fe
             lower_diff_old = old_param_fe - lower_pb
+            #print(upper_diff_old, lower_diff_old)
             if np.abs(upper_diff_old)<alpha:
                 prior_det_old = 1/(alpha+upper_diff_old)
                 print("old hit upper")
@@ -873,18 +914,22 @@ def do_fe_global_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, 
             #True if the ith sample was at a place where we could jump with a deterministic jump
             #False otherwise            
             det_old = np.abs(old_param-old_param_fe)<alpha
-            det_new = np.abs(new_param-new_param_fe)<alpha
+            det_new = deterministic #np.abs(new_param-new_param_fe)<alpha
             #get priors for old and new points
             prior_old = ptas[n_source][gwb_on].params[k].get_pdf(old_param)
             prior_new = ptas[n_source][gwb_on].params[k].get_pdf(new_param)
+            
+            #probability that it was put there as deterministic given that it's in a deterministic place
+            p_det_indet_old = p_det/(p_det + (1-p_det)*prior_old/prior_det_old )
+            print("p(det| in det)= ", p_det_indet_old)
             if det_new and not det_old: #from non-det to det
-                hastings_extra_factor *= ( (1-p_det)*prior_old ) / ( (1-p_det)*prior_new + p_det*prior_det_new )
+                hastings_extra_factor *= prior_old / prior_det_new 
             elif not det_new and det_old: #from det to non-det
-                hastings_extra_factor *= ( (1-p_det)*prior_old + p_det*prior_det_old ) / ( (1-p_det)*prior_new )
+                hastings_extra_factor *= ( (1-p_det_indet_old)*prior_old + p_det_indet_old*prior_det_old ) / prior_new
             elif det_new and det_old: #from det to det
-                hastings_extra_factor *= ( (1-p_det)*prior_old + p_det*prior_det_old ) / ( (1-p_det)*prior_new + p_det*prior_det_new )
+                hastings_extra_factor *= ( (1-p_det_indet_old)*prior_old + p_det_indet_old*prior_det_old ) / prior_det_new
             elif not det_new and not det_old: #from non-det to non-det
-                hastings_extra_factor *= ( (1-p_det)*prior_old ) / ( (1-p_det)*prior_new )
+                hastings_extra_factor *= prior_old / prior_new
 
         acc_ratio = np.exp(log_acc_ratio)*(fe_old_point/fe_new_point)*hastings_extra_factor
         #not needed (most likely): samples[j,i+1,n_source*7+1:] = np.zeros((max_n_source-n_source)*7)
