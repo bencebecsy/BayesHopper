@@ -914,20 +914,20 @@ def do_fe_global_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, 
             #True if the ith sample was at a place where we could jump with a deterministic jump
             #False otherwise            
             det_old = np.abs(old_param-old_param_fe)<alpha
-            det_new = deterministic #np.abs(new_param-new_param_fe)<alpha
+            det_new = np.abs(new_param-new_param_fe)<alpha
             #get priors for old and new points
             prior_old = ptas[n_source][gwb_on].params[k].get_pdf(old_param)
             prior_new = ptas[n_source][gwb_on].params[k].get_pdf(new_param)
             
             #probability that it was put there as deterministic given that it's in a deterministic place
-            p_det_indet_old = p_det/(p_det + (1-p_det)*prior_old/prior_det_old )
-            print("p(det| in det)= ", p_det_indet_old)
+            #p_det_indet_old = p_det/(p_det + (1-p_det)*prior_old/prior_det_old )
+            #print("p(det| in det)= ", p_det_indet_old)
             if det_new and not det_old: #from non-det to det
-                hastings_extra_factor *= prior_old / prior_det_new 
+                hastings_extra_factor *= prior_old / ( (1-p_det)*prior_new + p_det*prior_det_new ) 
             elif not det_new and det_old: #from det to non-det
-                hastings_extra_factor *= ( (1-p_det_indet_old)*prior_old + p_det_indet_old*prior_det_old ) / prior_new
+                hastings_extra_factor *= ( (1-p_det)*prior_old + p_det*prior_det_old ) / prior_new
             elif det_new and det_old: #from det to det
-                hastings_extra_factor *= ( (1-p_det_indet_old)*prior_old + p_det_indet_old*prior_det_old ) / prior_det_new
+                hastings_extra_factor *= ( (1-p_det)*prior_old + p_det*prior_det_old ) / ( (1-p_det)*prior_new + p_det*prior_det_new )
             elif not det_new and not det_old: #from non-det to non-det
                 hastings_extra_factor *= prior_old / prior_new
 
