@@ -27,7 +27,7 @@ from enterprise_extensions import models as ext_models
 
 def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, n_source_prior='flat', n_source_start='random', RJ_weight=0,
                regular_weight=3, noise_jump_weight=3, PT_swap_weight=1, T_ladder = None,
-               Fe_proposal_weight=0, fe_file=None, draw_from_prior_weight=0,
+               Fe_proposal_weight=0, fe_file=None, Fe_pdet=0.5, Fe_alpha=0.1, draw_from_prior_weight=0,
                de_weight=0, prior_recovery=False, cw_amp_prior='uniform', gwb_amp_prior='uniform', rn_amp_prior='uniform',
                gwb_log_amp_range=[-18,-11], rn_log_amp_range=[-18,-11], cw_log_amp_range=[-18,-11],
                vary_white_noise=False, efac_start=1.0,
@@ -163,6 +163,8 @@ def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, n_source_prior='flat'
 
     #getting the number of dimensions
     #ndim = len(pta.params)
+
+    print("In Fe-proposal we will use p_det={0} and alpha={1}".format(Fe_pdet, Fe_alpha))
 
     #do n_global_first global proposal steps before starting any other step
     n_global_first = 0
@@ -359,7 +361,7 @@ Draw from prior: {3:.2f}%\nDifferential evolution jump: {4:.2f}%\nNoise jump: {7
                 do_pt_swap(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, swap_record, vary_white_noise, include_gwb, num_noise_params)
             #global proposal based on Fe-statistic
             elif jump_decide<swap_probability+fe_proposal_probability:
-                do_fe_global_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, fe_file, vary_white_noise, include_gwb, num_noise_params)
+                do_fe_global_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, fe_file, vary_white_noise, include_gwb, num_noise_params, Fe_pdet, Fe_alpha)
             #draw from prior move
             elif jump_decide<swap_probability+fe_proposal_probability+draw_from_prior_probability:
                 do_draw_from_prior_move(n_chain, n_source, pta, samples, i, Ts, a_yes, a_no)
@@ -728,7 +730,7 @@ def do_draw_from_prior_move(n_chain, n_source, pta, samples, i, Ts, a_yes, a_no)
 #
 ################################################################################
 
-def do_fe_global_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, fe_file, vary_white_noise, include_gwb, num_noise_params):    
+def do_fe_global_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, fe_file, vary_white_noise, include_gwb, num_noise_params, Fe_pdet, Fe_alpha):
     if fe_file==None:
         raise Exception("Fe-statistics data file is needed for Fe global propsals")
     npzfile = np.load(fe_file)
@@ -742,9 +744,9 @@ def do_fe_global_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, 
     #ndim = n_source*7
        
     #set probability of deterministic vs flat proposal in extrinsic parameters
-    p_det = 0.5
+    p_det = Fe_pdet
     #set width of deterministic proposal
-    alpha = 0.1
+    alpha = Fe_alpha
 
     #set limit used for rejection sampling below
     fe_limit = np.max(fe)
