@@ -852,10 +852,10 @@ def do_fe_global_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, 
             #print(upper_diff_new, lower_diff_new)
             if np.abs(upper_diff_new)<alpha:
                 prior_det_new = 1/(alpha+upper_diff_new)
-                print("new hit upper")
+                #print("new hit upper")
             elif np.abs(lower_diff_new)<alpha:
                 prior_det_new = 1/(alpha+lower_diff_new)
-                print("new hit lower")
+                #print("new hit lower")
             else:
                 prior_det_new = 1/(2*alpha)
 
@@ -865,10 +865,10 @@ def do_fe_global_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, 
             #print(upper_diff_old, lower_diff_old)
             if np.abs(upper_diff_old)<alpha:
                 prior_det_old = 1/(alpha+upper_diff_old)
-                print("old hit upper")
+                #print("old hit upper")
             elif np.abs(lower_diff_old)<alpha:
                 prior_det_old = 1/(alpha+lower_diff_old)
-                print("old hit lower")
+                #print("old hit lower")
             else:
                 prior_det_old = 1/(2*alpha)
 
