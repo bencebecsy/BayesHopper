@@ -1075,7 +1075,7 @@ def do_pt_swap(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, swap_re
 #FISHER EIGENVALUE CALCULATION
 #
 ################################################################################
-def get_fisher_eigenvectors(params, pta, T_chain=1, epsilon=1e-4, n_source=1, dim=7, offset=0, use_prior=True):
+def get_fisher_eigenvectors(params, pta, T_chain=1, epsilon=1e-4, n_source=1, dim=7, offset=0, use_prior=False):
     fisher = np.zeros((n_source,dim,dim))
     eig = []
 
