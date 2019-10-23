@@ -278,6 +278,18 @@ def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, n_source_prior='flat'
     swap_record = []
     rj_record = []
 
+    #read in fe data if we will need it
+    if Fe_proposal_weight+RJ_weight>0:
+        if fe_file==None:
+            raise Exception("Fe-statistics data file is needed for Fe global propsals")
+        npzfile = np.load(fe_file)
+        freqs = npzfile['freqs']
+        fe = npzfile['fe']
+        inc_max = npzfile['inc_max']
+        psi_max = npzfile['psi_max']
+        phase0_max = npzfile['phase0_max']
+        h_max = npzfile['h_max']
+
     #set up probabilities of different proposals
     total_weight = (regular_weight + PT_swap_weight + Fe_proposal_weight + 
                     draw_from_prior_weight + de_weight + RJ_weight + gwb_switch_weight + noise_jump_weight)
@@ -361,7 +373,7 @@ Draw from prior: {3:.2f}%\nDifferential evolution jump: {4:.2f}%\nNoise jump: {7
                 do_pt_swap(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, swap_record, vary_white_noise, include_gwb, num_noise_params)
             #global proposal based on Fe-statistic
             elif jump_decide<swap_probability+fe_proposal_probability:
-                do_fe_global_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, fe_file, vary_white_noise, include_gwb, num_noise_params, Fe_pdet, Fe_alpha)
+                do_fe_global_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, freqs, fe, inc_max, psi_max, phase0_max, h_max, vary_white_noise, include_gwb, num_noise_params, Fe_pdet, Fe_alpha)
             #draw from prior move
             elif jump_decide<swap_probability+fe_proposal_probability+draw_from_prior_probability:
                 do_draw_from_prior_move(n_chain, n_source, pta, samples, i, Ts, a_yes, a_no)
@@ -372,7 +384,7 @@ Draw from prior: {3:.2f}%\nDifferential evolution jump: {4:.2f}%\nNoise jump: {7
             #do RJ move
             elif (jump_decide<swap_probability+fe_proposal_probability+
                  draw_from_prior_probability+de_probability+RJ_probability):
-                do_rj_move(n_chain, max_n_source, n_source_prior, ptas, samples, i, Ts, a_yes, a_no, fe_file, rj_record, vary_white_noise, include_gwb, num_noise_params)
+                do_rj_move(n_chain, max_n_source, n_source_prior, ptas, samples, i, Ts, a_yes, a_no, freqs, fe, inc_max, psi_max, phase0_max, h_max, rj_record, vary_white_noise, include_gwb, num_noise_params)
             #do GWB switch move
             elif (jump_decide<swap_probability+fe_proposal_probability+
                  draw_from_prior_probability+de_probability+RJ_probability+gwb_switch_probability):
@@ -479,7 +491,7 @@ def gwb_switch_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, va
 #REVERSIBLE-JUMP (RJ, aka TRANS-DIMENSIONAL) MOVE
 #
 ################################################################################
-def do_rj_move(n_chain, max_n_source, n_source_prior, ptas, samples, i, Ts, a_yes, a_no, fe_file, rj_record, vary_white_noise, include_gwb, num_noise_params):
+def do_rj_move(n_chain, max_n_source, n_source_prior, ptas, samples, i, Ts, a_yes, a_no, freqs, fe, inc_max, psi_max, phase0_max, h_max, rj_record, vary_white_noise, include_gwb, num_noise_params):
     for j in range(n_chain):
         n_source = int(np.copy(samples[j,i,0]))
 
@@ -493,16 +505,6 @@ def do_rj_move(n_chain, max_n_source, n_source_prior, ptas, samples, i, Ts, a_ye
         direction_decide = np.random.uniform()
         if n_source==0 or (direction_decide<add_prob and n_source!=max_n_source): #adding a signal------------------------------------------------------
             if j==0: rj_record.append(1)
-            if fe_file==None:
-                raise Exception("Fe-statistics data file is needed for Fe global propsals")
-            npzfile = np.load(fe_file)
-            freqs = npzfile['freqs']
-            fe = npzfile['fe']
-            inc_max = npzfile['inc_max']
-            psi_max = npzfile['psi_max']
-            phase0_max = npzfile['phase0_max']
-            h_max = npzfile['h_max']
-   
             #alpha = 0.1
  
             #set limit used for rejection sampling below
@@ -510,23 +512,26 @@ def do_rj_move(n_chain, max_n_source, n_source_prior, ptas, samples, i, Ts, a_ye
             #if the max is too high, cap it at Fe=200 (Neil's trick to not to be too restrictive)
             #if fe_limit>200:
             #    fe_limit=200
-    
+            
+            log_f_max = float(ptas[n_source][gwb_on].params[3]._typename.split('=')[2][:-1])
+            log_f_min = float(ptas[n_source][gwb_on].params[3]._typename.split('=')[1].split(',')[0])
+
             accepted = False
             while accepted==False:
-                log_f_new = ptas[-1][gwb_on].params[3].sample()
+                log_f_new = np.random.uniform(low=log_f_min, high=log_f_max)
                 f_idx = (np.abs(np.log10(freqs) - log_f_new)).argmin()
 
-                gw_theta = np.arccos(ptas[-1][gwb_on].params[0].sample())
-                gw_phi = ptas[-1][gwb_on].params[2].sample()
+                gw_theta = np.arccos(np.random.uniform(low=-1.0, high=1.0))
+                gw_phi = np.random.uniform(low=0.0, high=2*np.pi)
                 hp_idx = hp.ang2pix(hp.get_nside(fe), gw_theta, gw_phi)
 
                 fe_new_point = fe[f_idx, hp_idx]
                 if np.random.uniform()<(fe_new_point/fe_limit):
                     accepted = True
 
-            cos_inc = ptas[-1][gwb_on].params[1].sample()
-            psi = ptas[-1][gwb_on].params[6].sample()
-            phase0 = ptas[-1][gwb_on].params[5].sample()
+            cos_inc = np.random.uniform(low=-1.0, high=1.0)
+            psi = np.random.uniform(low=0.0, high=np.pi)
+            phase0 = np.random.uniform(low=0.0, high=2*np.pi)
             log10_h = ptas[-1][gwb_on].params[4].sample()
             
             prior_ext = (ptas[-1][gwb_on].params[1].get_pdf(cos_inc) * ptas[-1][gwb_on].params[6].get_pdf(psi) *
@@ -582,16 +587,6 @@ def do_rj_move(n_chain, max_n_source, n_source_prior, ptas, samples, i, Ts, a_ye
            
         elif n_source==max_n_source or (direction_decide>add_prob and n_source!=0):   #removing a signal----------------------------------------------------------
             if j==0: rj_record.append(-1)
-            if fe_file==None:
-                raise Exception("Fe-statistics data file is needed for Fe global propsals")
-            npzfile = np.load(fe_file)
-            freqs = npzfile['freqs']
-            fe = npzfile['fe']
-            inc_max = npzfile['inc_max']
-            psi_max = npzfile['psi_max']
-            phase0_max = npzfile['phase0_max']
-            h_max = npzfile['h_max']
-
             #choose which source to remove
             remove_index = np.random.randint(n_source)
             
@@ -730,17 +725,7 @@ def do_draw_from_prior_move(n_chain, n_source, pta, samples, i, Ts, a_yes, a_no)
 #
 ################################################################################
 
-def do_fe_global_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, fe_file, vary_white_noise, include_gwb, num_noise_params, Fe_pdet, Fe_alpha):
-    if fe_file==None:
-        raise Exception("Fe-statistics data file is needed for Fe global propsals")
-    npzfile = np.load(fe_file)
-    freqs = npzfile['freqs']
-    fe = npzfile['fe']
-    inc_max = npzfile['inc_max']
-    psi_max = npzfile['psi_max']
-    phase0_max = npzfile['phase0_max']
-    h_max = npzfile['h_max']
-
+def do_fe_global_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, freqs, fe, inc_max, psi_max, phase0_max, h_max, vary_white_noise, include_gwb, num_noise_params, Fe_pdet, Fe_alpha):
     #ndim = n_source*7
        
     #set probability of deterministic vs flat proposal in extrinsic parameters
@@ -768,13 +753,16 @@ def do_fe_global_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, 
         else:
             gwb_on = 0
 
+        log_f_max = float(ptas[n_source][gwb_on].params[3]._typename.split('=')[2][:-1])
+        log_f_min = float(ptas[n_source][gwb_on].params[3]._typename.split('=')[1].split(',')[0])
+
         accepted = False
         while accepted==False:
-            log_f_new = ptas[-1][gwb_on].params[3].sample()
+            log_f_new = np.random.uniform(low=log_f_min, high=log_f_max)
             f_idx = (np.abs(np.log10(freqs) - log_f_new)).argmin()
 
-            gw_theta = np.arccos(ptas[-1][gwb_on].params[0].sample())
-            gw_phi = ptas[-1][gwb_on].params[2].sample()
+            gw_theta = np.arccos(np.random.uniform(low=-1.0, high=1.0))
+            gw_phi = np.random.uniform(low=0.0, high=2*np.pi)
             hp_idx = hp.ang2pix(hp.get_nside(fe), gw_theta, gw_phi)
 
             fe_new_point = fe[f_idx, hp_idx]
@@ -792,9 +780,9 @@ def do_fe_global_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, 
             phase0 = phase0_max[f_idx, hp_idx] + 2*alpha*(np.random.uniform()-0.5)
             log10_h = np.log10(h_max[f_idx, hp_idx]) + 2*alpha*(np.random.uniform()-0.5)
         else:
-            cos_inc = ptas[-1][gwb_on].params[1].sample()
-            psi = ptas[-1][gwb_on].params[6].sample()
-            phase0 = ptas[-1][gwb_on].params[5].sample()
+            cos_inc = np.random.uniform(low=-1.0, high=1.0)
+            psi = np.random.uniform(low=0.0, high=np.pi)
+            phase0 = np.random.uniform(low=0.0, high=2*np.pi)
             log10_h = ptas[-1][gwb_on].params[4].sample()
 
         #choose randomly which source to change
