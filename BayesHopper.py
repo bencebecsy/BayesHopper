@@ -513,8 +513,8 @@ def do_rj_move(n_chain, max_n_source, n_source_prior, ptas, samples, i, Ts, a_ye
             #if fe_limit>200:
             #    fe_limit=200
             
-            log_f_max = float(ptas[n_source][gwb_on].params[3]._typename.split('=')[2][:-1])
-            log_f_min = float(ptas[n_source][gwb_on].params[3]._typename.split('=')[1].split(',')[0])
+            log_f_max = float(ptas[1][gwb_on].params[3]._typename.split('=')[2][:-1])
+            log_f_min = float(ptas[1][gwb_on].params[3]._typename.split('=')[1].split(',')[0])
 
             accepted = False
             while accepted==False:
