@@ -289,6 +289,56 @@ def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, n_source_prior='flat'
         psi_max = npzfile['psi_max']
         phase0_max = npzfile['phase0_max']
         h_max = npzfile['h_max']
+        
+        if Fe_proposal_weight>0:
+            #psi
+            psi_hist, psi_bin_edges = np.histogram(psi_max.flatten(), bins=100, density=True)
+            psi_bin_centers = []
+            for k in range(len(psi_bin_edges)-1):
+                psi_bin_centers.append((psi_bin_edges[k+1]+psi_bin_edges[k])/2)
+            psi_bin_centers = np.array(psi_bin_centers)
+            def psi_pdf(x):
+                if x>psi_bin_edges[0] and x<psi_bin_edges[-1]:
+                    bin_idx = (np.abs(psi_bin_centers - x)).argmin()
+                    return psi_hist[bin_idx]
+                else:
+                    return 0.0
+            #inc
+            inc_hist, inc_bin_edges = np.histogram(np.cos(inc_max.flatten()), bins=100, density=True)
+            inc_bin_centers = []
+            for k in range(len(inc_bin_edges)-1):
+                inc_bin_centers.append((inc_bin_edges[k+1]+inc_bin_edges[k])/2)
+            inc_bin_centers = np.array(inc_bin_centers)
+            def cos_inc_pdf(x):
+                if x>inc_bin_edges[0] and x<inc_bin_edges[-1]:
+                    bin_idx = (np.abs(inc_bin_centers - x)).argmin()
+                    return inc_hist[bin_idx]
+                else:
+                    return 0.0
+            #phase0
+            phase0_hist, phase0_bin_edges = np.histogram(phase0_max.flatten(), bins=100, density=True)
+            phase0_bin_centers = []
+            for k in range(len(phase0_bin_edges)-1):
+                phase0_bin_centers.append((phase0_bin_edges[k+1]+phase0_bin_edges[k])/2)
+            phase0_bin_centers = np.array(phase0_bin_centers)
+            def phase0_pdf(x):
+                if x>phase0_bin_edges[0] and x<phase0_bin_edges[-1]:
+                    bin_idx = (np.abs(phase0_bin_centers - x)).argmin()
+                    return phase0_hist[bin_idx]
+                else:
+                    return 0.0
+            #h
+            h_hist, h_bin_edges = np.histogram(np.log10(h_max.flatten()), bins=1000, range=(cw_log_amp_range[0],cw_log_amp_range[1]), density=True)
+            h_bin_centers = []
+            for k in range(len(h_bin_edges)-1):
+                h_bin_centers.append((h_bin_edges[k+1]+h_bin_edges[k])/2)
+            h_bin_centers = np.array(h_bin_centers)
+            def log_h_pdf(x):
+                if x>h_bin_edges[0] and x<h_bin_edges[-1]:
+                    bin_idx = (np.abs(h_bin_centers - x)).argmin()
+                    return h_hist[bin_idx]
+                else:
+                    return 0.0
 
     #set up probabilities of different proposals
     total_weight = (regular_weight + PT_swap_weight + Fe_proposal_weight + 
@@ -373,7 +423,7 @@ Draw from prior: {3:.2f}%\nDifferential evolution jump: {4:.2f}%\nNoise jump: {7
                 do_pt_swap(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, swap_record, vary_white_noise, include_gwb, num_noise_params)
             #global proposal based on Fe-statistic
             elif jump_decide<swap_probability+fe_proposal_probability:
-                do_fe_global_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, freqs, fe, inc_max, psi_max, phase0_max, h_max, vary_white_noise, include_gwb, num_noise_params, Fe_pdet, Fe_alpha)
+                do_fe_global_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, freqs, fe, inc_max, psi_max, phase0_max, h_max, vary_white_noise, include_gwb, num_noise_params, Fe_pdet, Fe_alpha, psi_pdf, cos_inc_pdf, phase0_pdf, log_h_pdf)
             #draw from prior move
             elif jump_decide<swap_probability+fe_proposal_probability+draw_from_prior_probability:
                 do_draw_from_prior_move(n_chain, n_source, pta, samples, i, Ts, a_yes, a_no)
@@ -725,7 +775,7 @@ def do_draw_from_prior_move(n_chain, n_source, pta, samples, i, Ts, a_yes, a_no)
 #
 ################################################################################
 
-def do_fe_global_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, freqs, fe, inc_max, psi_max, phase0_max, h_max, vary_white_noise, include_gwb, num_noise_params, Fe_pdet, Fe_alpha):
+def do_fe_global_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, freqs, fe, inc_max, psi_max, phase0_max, h_max, vary_white_noise, include_gwb, num_noise_params, Fe_pdet, Fe_alpha, psi_pdf, cos_inc_pdf, phase0_pdf, log_h_pdf):
     #ndim = n_source*7
        
     #set probability of deterministic vs flat proposal in extrinsic parameters
@@ -738,6 +788,11 @@ def do_fe_global_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, 
     #if the max is too high, cap it at Fe=200 (Neil's trick to not to be too restrictive)
     #if fe_limit>200:
     #    fe_limit=200
+
+    #print("PDF_max_cos_inc(0.25) = ",cos_inc_pdf(0.25))
+    #print("PDF_max_psi(1.0) = ",psi_pdf(1.0))
+    #print("PDF_max_phase0(5.0) = ",phase0_pdf(5.0))
+    #print("PDF_max_log_h(-14) = ",log_h_pdf(-14))
     
     for j in range(n_chain):
         #check if there's any source -- stay at given point of not
@@ -825,9 +880,11 @@ def do_fe_global_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, 
         new_params = [cos_inc, log10_h, phase0, psi]
         new_params_fe = [np.cos(inc_max[f_idx, hp_idx]), np.log10(h_max[f_idx, hp_idx]),
                         phase0_max[f_idx, hp_idx], psi_max[f_idx, hp_idx]]
+
+        external_pdfs = [cos_inc_pdf, log_h_pdf, phase0_pdf, psi_pdf]
         
         hastings_extra_factor=1.0
-        for k, old_param_fe, new_param, new_param_fe in zip([1,4,5,6], old_params_fe, new_params, new_params_fe):
+        for k, old_param_fe, new_param, new_param_fe, ext_pdf in zip([1,4,5,6], old_params_fe, new_params, new_params_fe, external_pdfs):
             old_param = samples[j,i,1+k+source_select*7]
             #check if deterministic top-hat hits any boundaries
             #get prior boundaries
@@ -875,11 +932,11 @@ def do_fe_global_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, 
             #p_det_indet_old = p_det/(p_det + (1-p_det)*prior_old/prior_det_old )
             #print("p(det| in det)= ", p_det_indet_old)
             if det_new and not det_old: #from non-det to det
-                hastings_extra_factor *= prior_old / ( (1-p_det)*prior_new + p_det*prior_det_new ) 
+                hastings_extra_factor *= prior_old / ( (1-p_det)*prior_new + p_det*prior_det_new*ext_pdf(new_param) ) 
             elif not det_new and det_old: #from det to non-det
-                hastings_extra_factor *= ( (1-p_det)*prior_old + p_det*prior_det_old ) / prior_new
+                hastings_extra_factor *= ( (1-p_det)*prior_old + p_det*prior_det_old*ext_pdf(old_param) ) / prior_new
             elif det_new and det_old: #from det to det
-                hastings_extra_factor *= ( (1-p_det)*prior_old + p_det*prior_det_old ) / ( (1-p_det)*prior_new + p_det*prior_det_new )
+                hastings_extra_factor *= ( (1-p_det)*prior_old + p_det*prior_det_old*ext_pdf(old_param) ) / ( (1-p_det)*prior_new + p_det*prior_det_new*ext_pdf(new_param) )
             elif not det_new and not det_old: #from non-det to non-det
                 hastings_extra_factor *= prior_old / prior_new
 
