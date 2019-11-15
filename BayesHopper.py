@@ -16,8 +16,8 @@ from enterprise.signals import white_signals
 from enterprise.signals import gp_signals
 from enterprise.signals import utils
 
+from enterprise_extensions.frequentist import Fe_statistic
 import enterprise_cw_funcs_from_git as models
-from enterprise_extensions import models as ext_models
 
 ################################################################################
 #
@@ -35,122 +35,7 @@ def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, n_source_prior='flat'
                include_rn=False, vary_rn=False, rn_params=[-13.0,1.0], jupyter_notebook=False,
                gwb_on_prior=0.5):
 
-    #setting up base model
-    if vary_white_noise:
-        efac = parameter.Uniform(0.01, 10.0)
-        #equad = parameter.Uniform(-8.5, -5)
-    else:
-        efac = parameter.Constant(efac_start) 
-        #equad = parameter.Constant(wn_params[1])
-    
-    ef = white_signals.MeasurementNoise(efac=efac)
-    #eq = white_signals.EquadNoise(log10_equad=equad)
-    tm = gp_signals.TimingModel(use_svd=True)
-
-    base_model = ef + tm
-    
-    #adding red noise if included
-    if include_rn:
-        tmin = [p.toas.min() for p in pulsars]
-        tmax = [p.toas.max() for p in pulsars]
-        Tspan = np.max(tmax) - np.min(tmin)
-        
-        if vary_rn:
-            #rn = ext_models.common_red_noise_block(prior='uniform', Tspan=Tspan, name='com_rn')
-            amp_name = 'com_rn_log10_A'
-            if rn_amp_prior == 'uniform':
-                log10_Arn = parameter.LinearExp(rn_log_amp_range[0], rn_log_amp_range[1])(amp_name)
-            elif rn_amp_prior == 'log-uniform':
-                log10_Arn = parameter.Uniform(rn_log_amp_range[0], rn_log_amp_range[1])(amp_name)
-            gam_name = 'com_rn_gamma'
-            gamma_rn = parameter.Uniform(0, 7)(gam_name)
-            pl = utils.powerlaw(log10_A=log10_Arn, gamma=gamma_rn)
-            rn = gp_signals.FourierBasisGP(spectrum=pl, coefficients=False, components=30, Tspan=Tspan,
-                                           modes=None, name='com_rn')
-        else:
-            log10_A = parameter.Constant(rn_params[0])
-            gamma = parameter.Constant(rn_params[1])
-            pl = utils.powerlaw(log10_A=log10_A, gamma=gamma)
-            rn = gp_signals.FourierBasisGP(spectrum=pl, components=30, Tspan=Tspan)
-        
-        base_model += rn 
-
-    #make base models including GWB
-    if include_gwb:
-        # find the maximum time span to set GW frequency sampling
-        tmin = [p.toas.min() for p in pulsars]
-        tmax = [p.toas.max() for p in pulsars]
-        Tspan = np.max(tmax) - np.min(tmin)
-        amp_name = 'gw_log10_A'
-        if gwb_amp_prior == 'uniform':
-            log10_Agw = parameter.LinearExp(gwb_log_amp_range[0], gwb_log_amp_range[1])(amp_name)
-        elif gwb_amp_prior == 'log-uniform':
-            log10_Agw = parameter.Uniform(gwb_log_amp_range[0], gwb_log_amp_range[1])(amp_name)
-        
-        gam_name = 'gw_gamma'
-        gamma_val = 13.0/3
-        gamma_gw = parameter.Constant(gamma_val)(gam_name)
-
-        cpl = utils.powerlaw(log10_A=log10_Agw, gamma=gamma_gw)
-        gwb = gp_signals.FourierBasisCommonGP(cpl, utils.hd_orf(), coefficients=False,
-                                              components=30, Tspan=Tspan,
-                                              modes=None, name='gw')
-
-        base_model_gwb = base_model + gwb
-
-    #setting up the pta object
-    cws = []
-    for i in range(max_n_source):
-        log10_fgw = parameter.Uniform(np.log10(3.5e-9), -7)(str(i)+'_'+'log10_fgw')
-        log10_mc = parameter.Constant(np.log10(5e9))(str(i)+'_'+'log10_mc')
-        cos_gwtheta = parameter.Uniform(-1, 1)(str(i)+'_'+'cos_gwtheta')
-        gwphi = parameter.Uniform(0, 2*np.pi)(str(i)+'_'+'gwphi')
-        phase0 = parameter.Uniform(0, 2*np.pi)(str(i)+'_'+'phase0')
-        psi = parameter.Uniform(0, np.pi)(str(i)+'_'+'psi')
-        cos_inc = parameter.Uniform(-1, 1)(str(i)+'_'+'cos_inc')
-        if cw_amp_prior == 'log-uniform':
-            log10_h = parameter.Uniform(cw_log_amp_range[0], cw_log_amp_range[1])(str(i)+'_'+'log10_h')
-        elif cw_amp_prior == 'uniform':
-            log10_h = parameter.LinearExp(cw_log_amp_range[0], cw_log_amp_range[1])(str(i)+'_'+'log10_h')
-        else:
-            print("CW amplitude prior of {0} not available".format(cw_amp_prior))
-        cw_wf = models.cw_delay(cos_gwtheta=cos_gwtheta, gwphi=gwphi, log10_mc=log10_mc,
-                     log10_h=log10_h, log10_fgw=log10_fgw, phase0=phase0,
-                     psi=psi, cos_inc=cos_inc, tref=53000*86400)
-        cws.append(models.CWSignal(cw_wf, psrTerm=include_psr_term, name='cw'+str(i)))
-    
-    ptas = []
-    for n_source in range(max_n_source+1):
-        PTA = []
-        s = base_model
-        for i in range(n_source):
-            s = s + cws[i]
-
-        model = []
-        for p in pulsars:
-            model.append(s(p))
-        
-        #set the likelihood to unity if we are in prior recovery mode
-        if prior_recovery:
-            PTA.append(get_prior_recovery_pta(signal_base.PTA(model)))
-        else:
-            PTA.append(signal_base.PTA(model))
-
-        if include_gwb:
-            s_gwb = base_model_gwb
-            for i in range(n_source):
-                s_gwb = s_gwb + cws[i]
-        
-            model_gwb = []
-            for p in pulsars:
-                model_gwb.append(s_gwb(p))
-            
-            #set the likelihood to unity if we are in prior recovery mode
-            if prior_recovery:
-                PTA.append(get_prior_recovery_pta(signal_base.PTA(model_gwb)))
-            else:
-                PTA.append(signal_base.PTA(model_gwb))
-        ptas.append(PTA)
+    ptas = get_ptas(pulsars, vary_white_noise=vary_white_noise, include_rn=include_rn, vary_rn=vary_rn, include_gwb=include_gwb, max_n_source=max_n_source, efac_start=efac_start, rn_amp_prior=rn_amp_prior, rn_log_amp_range=rn_log_amp_range, rn_params=rn_params, gwb_amp_prior=gwb_amp_prior, gwb_log_amp_range=gwb_log_amp_range, cw_amp_prior=cw_amp_prior, cw_log_amp_range=cw_log_amp_range, include_psr_term=include_psr_term, prior_recovery=prior_recovery)
 
     print(ptas)
     for i, PTA in enumerate(ptas):
@@ -1311,7 +1196,7 @@ def get_prior_recovery_pta(pta):
 #
 ################################################################################
 
-def transdim_postprocess(samples, separation_method='freq', f_tol=0.05, max_n_source=4, status_every=1000):
+def transdim_postprocess(samples, pulsars=None, ptas=None, separation_method='match', f_tol=0.1, match_tol=0.5, max_n_source=10, status_every=1000):
     N = samples.shape[0]
     
     if separation_method=='freq':
@@ -1342,11 +1227,279 @@ def transdim_postprocess(samples, separation_method='freq', f_tol=0.05, max_n_so
                         freqs[freq_idx] += (f - freqs[freq_idx]) / (len(source_on_idxs[freq_idx]) + 1)
                         sample_dict[freq_idx] = np.append(sample_dict[freq_idx], np.array([list(samples[i,1+7*j:1+7*(j+1)]),]), axis=0)
                         source_on_idxs[freq_idx].append(i)
+        return sample_dict, source_on_idxs
+
     elif separation_method=='match':
-        print("Not implemented yet")
+        if ptas is None:
+            pta = get_ptas(pulsars,include_rn=False, include_gwb=False, vary_white_noise=False)[1][0]
+        else:
+            pta = ptas[1][0]
+        print(pta.params)
+        avg_params = {} #actually max-L from given group
+        sample_dict = {}
+        source_on_idxs = {}
+        n_on = 0
+        n_found = 0
+        param_names = ['cos_gwtheta', 'cos_inc', 'gwphi', 'log10_fgw', 'log10_h', 'phase0', 'psi']
+        for i in range(N):
+            if i%status_every==0:
+                print('Progress: {0:2.2f}% '.format(i/N*100))
+            for j in range(max_n_source):
+                params = samples[i,1+7*j:1+7*(j+1)]
+                if not np.isnan(params[0]):
+                    n_on += 1
+                    new = True
+                    matches = []
+                    for key in avg_params.keys():
+                        if np.abs(params[3]-avg_params[key][3])<f_tol:
+                            pp = {'0_'+pname:value for pname, value in zip(param_names, params)}
+                            pp_avg = {'0_'+pname:value for pname, value in zip(param_names, avg_params[key])}
+                            #match_matrix = get_match_matrix(pta, [params, avg_params[key]])
+                            match_matrix = get_match_matrix(pta, [pp, pp_avg])
+                            match = match_matrix[0,1]
+                            if match>match_tol:
+                                new = False
+                                matches.append((match, key))
+                    if new:
+                        avg_params[n_found] = params
+                        sample_dict[n_found] = np.array([list(params),])
+                        source_on_idxs[n_found] = [i,]
+                        n_found += 1
+                    else:
+                        max_match = -1.0
+                        for match, key in matches:
+                            if match > max_match:
+                                max_match = match
+                                best_idx = key
+                        sample_dict[best_idx] = np.append(sample_dict[best_idx], np.array([list(params),]), axis=0)
+                        #use max-L parameters instead of average
+                        delta_log_L = pta.get_lnlikelihood(params) - pta.get_lnlikelihood(avg_params[best_idx])
+                        #print(delta_log_L)
+                        if delta_log_L>0.0:
+                            avg_params[best_idx] = params
+                        source_on_idxs[best_idx].append(i)
+        print(n_on, n_found)
+        return sample_dict, source_on_idxs, avg_params
+    
+    elif separation_method=="match-max-L":
+        gwb_on = 0
+        param_names = ['cos_gwtheta', 'cos_inc', 'gwphi', 'log10_fgw', 'log10_h', 'phase0', 'psi']
+        pta = get_ptas(pulsars,include_rn=False, include_gwb=False, vary_white_noise=False)[1][0]
+        sample_dict = {}
+        source_on_idxs = {}
+        params_max_L = {}
+        n_found = 0
+        found_all = False
+        flagged_ij = []
+        while not found_all:
+            print("Source #",n_found)
+            max_delta_L = 0.0
+            for i in range(N):
+                if i%status_every==0:
+                    print('Progress looking for next source: {0:2.2f}% '.format(i/N*100))
+                n_source = int(np.copy(samples[i,0]))
+                #print(n_source)
+                samples_current = np.delete(samples[i,1:], range(n_source*7,max_n_source*7))
+                for remove_index in range(n_source):
+                    if (i, remove_index) not in flagged_ij:
+                        new_point = np.delete(samples_current, range(remove_index*7,(remove_index+1)*7))
+                        #print(samples_current)
+                        #print(new_point)
+                        delta_L = ptas[n_source][gwb_on].get_lnlikelihood(samples_current) - ptas[(n_source-1)][gwb_on].get_lnlikelihood(new_point)
+                        if delta_L>max_delta_L:
+                            max_delta_L = delta_L
+                            max_L_ij = [i, remove_index]
+            print(max_delta_L)
+            if max_delta_L>5:
+                params_max_L[n_found] = {'0_'+pname:value for pname, value in zip(param_names, samples[max_L_ij[0],1+7*max_L_ij[1]:1+7*(max_L_ij[1]+1)])}
+                sample_dict[n_found] = np.array([list(samples[max_L_ij[0],1+7*max_L_ij[1]:1+7*(max_L_ij[1]+1)]),])
+                source_on_idxs[n_found] = [max_L_ij[0],]
+
+                for i in range(N):
+                    if i%status_every==0:
+                        print('Progress finding all samples for source: {0:2.2f}% '.format(i/N*100))
+                    for j in range(max_n_source):
+                        if (i,j) not in flagged_ij:
+                            params = samples[i,1+7*j:1+7*(j+1)]
+                            if not np.isnan(params[0]):
+                                if np.abs(params[3]-params_max_L[n_found]['0_log10_fgw'])<f_tol:
+                                    pp = {'0_'+pname:value for pname, value in zip(param_names, params)}
+                                    match_matrix = get_match_matrix(pta, [pp, params_max_L[n_found]])
+                                    match = match_matrix[0,1]
+                                    if match > match_tol:
+                                        sample_dict[n_found] = np.append(sample_dict[n_found], np.array([list(params),]), axis=0)
+                                        source_on_idxs[n_found].append(i)
+                                        flagged_ij.append((i,j))
+                n_found += 1
+            else:
+                found_all = True
+        
+        return sample_dict, source_on_idxs, params_max_L
+
+
     else:
         print("Not understood separation method: {0}".format(separation_method))
     
-    return sample_dict, source_on_idxs
+################################################################################
+#
+#MATCH CALCULATION ROUTINES
+#
+################################################################################
 
+def get_similarity_matrix(pta, params_list):
+    phiinvs = pta.get_phiinv([], logdet=False)
+    TNTs = pta.get_TNT([])
+    Ts = pta.get_basis()
+    Nvecs = pta.get_ndiag([])
+    Nmats = [ Fe_statistic.make_Nmat(phiinv, TNT, Nvec, T) for phiinv, TNT, Nvec, T in zip(phiinvs, TNTs, Nvecs, Ts)]
+
+    n_sources = len(params_list)
+
+    res_model = [pta.get_delay(x) for x in params_list]
+
+    S = np.zeros((n_sources,n_sources))
+    for idx, (psr, Nmat, TNT, phiinv, T) in enumerate(zip(pta.pulsars, Nmats,
+                                                          TNTs, phiinvs, Ts)):
+        Sigma = TNT + (np.diag(phiinv) if phiinv.ndim == 1 else phiinv)
+        for i in range(n_sources):
+            for j in range(n_sources):
+                delay_i = res_model[i][idx]
+                delay_j = res_model[j][idx]
+                S[i,j] += Fe_statistic.innerProduct_rr(delay_i, delay_j, Nmat, T, Sigma)
+    return S
+
+def get_match_matrix(pta, params_list):
+    S = get_similarity_matrix(pta, params_list)
+
+    M = np.zeros(S.shape)
+    for i in range(S.shape[0]):
+        for j in range(S.shape[0]):
+            M[i,j] = S[i,j]/np.sqrt(S[i,i]*S[j,j])
+    return M
+
+################################################################################
+#
+#FUNCTION TO EASILY SET UP A LIST OF PTA OBJECTS
+#
+################################################################################
+
+def get_ptas(pulsars, vary_white_noise=True, include_rn=True, vary_rn=True, include_gwb=True, max_n_source=1, efac_start=1.0, rn_amp_prior='uniform', rn_log_amp_range=[-18,-11], rn_params=[-13.0,1.0], gwb_amp_prior='uniform', gwb_log_amp_range=[-18,-11], cw_amp_prior='uniform', cw_log_amp_range=[-18,-11], include_psr_term=False, prior_recovery=False):
+    #setting up base model
+    if vary_white_noise:
+        efac = parameter.Uniform(0.01, 10.0)
+        #equad = parameter.Uniform(-8.5, -5)
+    else:
+        efac = parameter.Constant(efac_start) 
+        #equad = parameter.Constant(wn_params[1])
+    
+    ef = white_signals.MeasurementNoise(efac=efac)
+    #eq = white_signals.EquadNoise(log10_equad=equad)
+    tm = gp_signals.TimingModel(use_svd=True)
+
+    base_model = ef + tm
+    
+    #adding red noise if included
+    if include_rn:
+        tmin = [p.toas.min() for p in pulsars]
+        tmax = [p.toas.max() for p in pulsars]
+        Tspan = np.max(tmax) - np.min(tmin)
+        
+        if vary_rn:
+            #rn = ext_models.common_red_noise_block(prior='uniform', Tspan=Tspan, name='com_rn')
+            amp_name = 'com_rn_log10_A'
+            if rn_amp_prior == 'uniform':
+                log10_Arn = parameter.LinearExp(rn_log_amp_range[0], rn_log_amp_range[1])(amp_name)
+            elif rn_amp_prior == 'log-uniform':
+                log10_Arn = parameter.Uniform(rn_log_amp_range[0], rn_log_amp_range[1])(amp_name)
+            gam_name = 'com_rn_gamma'
+            gamma_rn = parameter.Uniform(0, 7)(gam_name)
+            pl = utils.powerlaw(log10_A=log10_Arn, gamma=gamma_rn)
+            rn = gp_signals.FourierBasisGP(spectrum=pl, coefficients=False, components=30, Tspan=Tspan,
+                                           modes=None, name='com_rn')
+        else:
+            log10_A = parameter.Constant(rn_params[0])
+            gamma = parameter.Constant(rn_params[1])
+            pl = utils.powerlaw(log10_A=log10_A, gamma=gamma)
+            rn = gp_signals.FourierBasisGP(spectrum=pl, components=30, Tspan=Tspan)
+        
+        base_model += rn 
+
+    #make base models including GWB
+    if include_gwb:
+        # find the maximum time span to set GW frequency sampling
+        tmin = [p.toas.min() for p in pulsars]
+        tmax = [p.toas.max() for p in pulsars]
+        Tspan = np.max(tmax) - np.min(tmin)
+        amp_name = 'gw_log10_A'
+        if gwb_amp_prior == 'uniform':
+            log10_Agw = parameter.LinearExp(gwb_log_amp_range[0], gwb_log_amp_range[1])(amp_name)
+        elif gwb_amp_prior == 'log-uniform':
+            log10_Agw = parameter.Uniform(gwb_log_amp_range[0], gwb_log_amp_range[1])(amp_name)
+        
+        gam_name = 'gw_gamma'
+        gamma_val = 13.0/3
+        gamma_gw = parameter.Constant(gamma_val)(gam_name)
+
+        cpl = utils.powerlaw(log10_A=log10_Agw, gamma=gamma_gw)
+        gwb = gp_signals.FourierBasisCommonGP(cpl, utils.hd_orf(), coefficients=False,
+                                              components=30, Tspan=Tspan,
+                                              modes=None, name='gw')
+
+        base_model_gwb = base_model + gwb
+
+    #setting up the pta object
+    cws = []
+    for i in range(max_n_source):
+        log10_fgw = parameter.Uniform(np.log10(3.5e-9), -7)(str(i)+'_'+'log10_fgw')
+        log10_mc = parameter.Constant(np.log10(5e9))(str(i)+'_'+'log10_mc')
+        cos_gwtheta = parameter.Uniform(-1, 1)(str(i)+'_'+'cos_gwtheta')
+        gwphi = parameter.Uniform(0, 2*np.pi)(str(i)+'_'+'gwphi')
+        phase0 = parameter.Uniform(0, 2*np.pi)(str(i)+'_'+'phase0')
+        psi = parameter.Uniform(0, np.pi)(str(i)+'_'+'psi')
+        cos_inc = parameter.Uniform(-1, 1)(str(i)+'_'+'cos_inc')
+        if cw_amp_prior == 'log-uniform':
+            log10_h = parameter.Uniform(cw_log_amp_range[0], cw_log_amp_range[1])(str(i)+'_'+'log10_h')
+        elif cw_amp_prior == 'uniform':
+            log10_h = parameter.LinearExp(cw_log_amp_range[0], cw_log_amp_range[1])(str(i)+'_'+'log10_h')
+        else:
+            print("CW amplitude prior of {0} not available".format(cw_amp_prior))
+        cw_wf = models.cw_delay(cos_gwtheta=cos_gwtheta, gwphi=gwphi, log10_mc=log10_mc,
+                     log10_h=log10_h, log10_fgw=log10_fgw, phase0=phase0,
+                     psi=psi, cos_inc=cos_inc, tref=53000*86400)
+        cws.append(models.CWSignal(cw_wf, psrTerm=include_psr_term, name='cw'+str(i)))
+    
+    ptas = []
+    for n_source in range(max_n_source+1):
+        PTA = []
+        s = base_model
+        for i in range(n_source):
+            s = s + cws[i]
+
+        model = []
+        for p in pulsars:
+            model.append(s(p))
+        
+        #set the likelihood to unity if we are in prior recovery mode
+        if prior_recovery:
+            PTA.append(get_prior_recovery_pta(signal_base.PTA(model)))
+        else:
+            PTA.append(signal_base.PTA(model))
+
+        if include_gwb:
+            s_gwb = base_model_gwb
+            for i in range(n_source):
+                s_gwb = s_gwb + cws[i]
+        
+            model_gwb = []
+            for p in pulsars:
+                model_gwb.append(s_gwb(p))
+            
+            #set the likelihood to unity if we are in prior recovery mode
+            if prior_recovery:
+                PTA.append(get_prior_recovery_pta(signal_base.PTA(model_gwb)))
+            else:
+                PTA.append(signal_base.PTA(model_gwb))
+        ptas.append(PTA)
+
+    return ptas
 
