@@ -75,7 +75,7 @@ def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, n_source_prior='flat'
  
     #array to hold Differential Evolution history
     history_size = 1000    
-    de_history = np.zeros((n_chain, history_size, n_source*7+1))
+    de_history = np.zeros((n_chain, history_size, max_n_source*7+1))
     #start DE after de_start_iter iterations
     de_start_iter = 100
        
