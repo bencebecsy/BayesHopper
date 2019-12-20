@@ -1,5 +1,5 @@
 # BayesHopper
-**Bayes**ian **H**yp**o**thesis testing for **p**ulsar timing arrays with **per**iodic signals
+Trans-dimensional Bayesian sampler for gravitational-wave data analysis in pulsar timing array data
 
 ![logo](BHlogo.png)
 
