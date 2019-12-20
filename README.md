@@ -1,5 +1,6 @@
 # BayesHopper
 **Bayes**ian **H**yp**o**thesis testing for **p**ulsar timing arrays with **per**iodic signals
+
 ![logo](BHlogo.png)
 
 See [arXiv:1912.08807](https://arxiv.org/abs/1912.08807) for details!
