@@ -10,14 +10,14 @@ import healpy as hp
 import matplotlib.pyplot as plt
 
 import enterprise
-import enterprise.signals.parameter as parameter
+from enterprise.signals import parameter
 from enterprise.signals import signal_base
 from enterprise.signals import white_signals
 from enterprise.signals import gp_signals
 from enterprise.signals import utils
 
 from enterprise_extensions.frequentist import Fe_statistic
-import enterprise_cw_funcs_from_git as models
+from enterprise_extensions import deterministic
 
 ################################################################################
 #
@@ -1556,10 +1556,10 @@ def get_ptas(pulsars, vary_white_noise=True, include_rn=True, vary_rn=True, incl
             log10_h = parameter.LinearExp(cw_log_amp_range[0], cw_log_amp_range[1])(str(i)+'_'+'log10_h')
         else:
             print("CW amplitude prior of {0} not available".format(cw_amp_prior))
-        cw_wf = models.cw_delay(cos_gwtheta=cos_gwtheta, gwphi=gwphi, log10_mc=log10_mc,
+        cw_wf = deterministic.cw_delay(cos_gwtheta=cos_gwtheta, gwphi=gwphi, log10_mc=log10_mc,
                      log10_h=log10_h, log10_fgw=log10_fgw, phase0=phase0,
                      psi=psi, cos_inc=cos_inc, tref=53000*86400)
-        cws.append(models.CWSignal(cw_wf, psrTerm=include_psr_term, name='cw'+str(i)))
+        cws.append(deterministic.CWSignal(cw_wf, psrTerm=include_psr_term, name='cw'+str(i)))
     
     ptas = []
     for n_source in range(max_n_source+1):
