@@ -8,6 +8,7 @@
 import numpy as np
 import healpy as hp
 import matplotlib.pyplot as plt
+import json
 
 import enterprise
 from enterprise.signals import parameter
@@ -15,6 +16,7 @@ from enterprise.signals import signal_base
 from enterprise.signals import white_signals
 from enterprise.signals import gp_signals
 from enterprise.signals import utils
+from enterprise.signals import selections
 
 from enterprise_extensions.frequentist import Fe_statistic
 from enterprise_extensions import deterministic
@@ -33,9 +35,9 @@ def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, n_source_prior='flat'
                vary_white_noise=False, efac_start=1.0,
                include_gwb=False, gwb_switch_weight=0, include_psr_term=False,
                include_rn=False, vary_rn=False, rn_params=[-13.0,1.0], jupyter_notebook=False,
-               gwb_on_prior=0.5):
+               gwb_on_prior=0.5, include_equad_ecorr=False, wn_backend_selection=False, noisedict_file=None):
 
-    ptas = get_ptas(pulsars, vary_white_noise=vary_white_noise, include_rn=include_rn, vary_rn=vary_rn, include_gwb=include_gwb, max_n_source=max_n_source, efac_start=efac_start, rn_amp_prior=rn_amp_prior, rn_log_amp_range=rn_log_amp_range, rn_params=rn_params, gwb_amp_prior=gwb_amp_prior, gwb_log_amp_range=gwb_log_amp_range, cw_amp_prior=cw_amp_prior, cw_log_amp_range=cw_log_amp_range, include_psr_term=include_psr_term, prior_recovery=prior_recovery)
+    ptas = get_ptas(pulsars, vary_white_noise=vary_white_noise, include_equad_ecorr=include_equad_ecorr, wn_backend_selection=wn_backend_selection, noisedict_file=noisedict_file, include_rn=include_rn, vary_rn=vary_rn, include_gwb=include_gwb, max_n_source=max_n_source, efac_start=efac_start, rn_amp_prior=rn_amp_prior, rn_log_amp_range=rn_log_amp_range, rn_params=rn_params, gwb_amp_prior=gwb_amp_prior, gwb_log_amp_range=gwb_log_amp_range, cw_amp_prior=cw_amp_prior, cw_log_amp_range=cw_log_amp_range, include_psr_term=include_psr_term, prior_recovery=prior_recovery)
 
     print(ptas)
     for i, PTA in enumerate(ptas):
@@ -126,7 +128,7 @@ def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, n_source_prior='flat'
         if vary_white_noise:
             samples[j,0,max_n_source*7+1:max_n_source*7+1+len(pulsars)] = np.ones(len(pulsars))*efac_start
         if vary_rn:
-            samples[j,0,max_n_source*7+1+len(pulsars):max_n_source*7+1+num_noise_params] = np.array([ptas[n_source][0].params[n_source*7+num_noise_params-2].sample(), ptas[n_source][0].params[n_source*7+num_noise_params-1].sample()])
+            samples[j,0,max_n_source*7+1+num_noise_params-2:max_n_source*7+1+num_noise_params] = np.array([ptas[n_source][0].params[n_source*7+num_noise_params-2].sample(), ptas[n_source][0].params[n_source*7+num_noise_params-1].sample()])
         if include_gwb:
             samples[j,0,max_n_source*7+1+num_noise_params] = ptas[n_source][1].params[n_source*7+num_noise_params].sample()
             #samples[j,0,max_n_source*7+1+num_noise_params] = 0.0 #start with GWB off
@@ -144,18 +146,19 @@ def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, n_source_prior='flat'
         eig_gwb_rn = np.broadcast_to( np.array([[1.0,0], [0,0.3]]), (n_chain, 2, 2)).copy()
 
     #and one for white noise parameters, which we will not update
-    eig_wn = np.broadcast_to(np.eye(len(pulsars))*0.1, (n_chain,len(pulsars), len(pulsars)) ).copy()
+    if vary_white_noise:
+        eig_wn = np.broadcast_to(np.eye(len(pulsars))*0.1, (n_chain,len(pulsars), len(pulsars)) ).copy()
  
-    #calculate wn eigenvectors
-    for j in range(n_chain):
-        #print('wn eigvec calculation')
-        #print(n_source)
-        if include_gwb:
-            wn_eigvec = get_fisher_eigenvectors(np.delete(samples[j,0,1:], range(n_source*7,max_n_source*7)), ptas[n_source][1], T_chain=Ts[j], n_source=1, dim=len(pulsars), offset=n_source*7)
-        else:
-            wn_eigvec = get_fisher_eigenvectors(np.delete(samples[j,0,1:], range(n_source*7,max_n_source*7)), ptas[n_source][0], T_chain=Ts[j], n_source=1, dim=len(pulsars), offset=n_source*7)
-        #print(wn_eigvec)
-        eig_wn[j,:,:] = wn_eigvec[0,:,:]
+        #calculate wn eigenvectors
+        for j in range(n_chain):
+            #print('wn eigvec calculation')
+            #print(n_source)
+            if include_gwb:
+                wn_eigvec = get_fisher_eigenvectors(np.delete(samples[j,0,1:], range(n_source*7,max_n_source*7)), ptas[n_source][1], T_chain=Ts[j], n_source=1, dim=len(pulsars), offset=n_source*7)
+            else:
+                wn_eigvec = get_fisher_eigenvectors(np.delete(samples[j,0,1:], range(n_source*7,max_n_source*7)), ptas[n_source][0], T_chain=Ts[j], n_source=1, dim=len(pulsars), offset=n_source*7)
+            #print(wn_eigvec)
+            eig_wn[j,:,:] = wn_eigvec[0,:,:]
 
     #setting up arrays to record acceptance and swaps
     a_yes=np.zeros(n_chain+2)
@@ -1476,20 +1479,35 @@ def get_match_matrix(pta, params_list, noise_param_dict=None):
 #
 ################################################################################
 
-def get_ptas(pulsars, vary_white_noise=True, include_rn=True, vary_rn=True, include_gwb=True, max_n_source=1, efac_start=1.0, rn_amp_prior='uniform', rn_log_amp_range=[-18,-11], rn_params=[-13.0,1.0], gwb_amp_prior='uniform', gwb_log_amp_range=[-18,-11], cw_amp_prior='uniform', cw_log_amp_range=[-18,-11], include_psr_term=False, prior_recovery=False):
+def get_ptas(pulsars, vary_white_noise=True, include_equad_ecorr=False, wn_backend_selection=False, noisedict_file=None, include_rn=True, vary_rn=True, include_gwb=True, max_n_source=1, efac_start=1.0, rn_amp_prior='uniform', rn_log_amp_range=[-18,-11], rn_params=[-13.0,1.0], gwb_amp_prior='uniform', gwb_log_amp_range=[-18,-11], cw_amp_prior='uniform', cw_log_amp_range=[-18,-11], include_psr_term=False, prior_recovery=False):
     #setting up base model
     if vary_white_noise:
         efac = parameter.Uniform(0.01, 10.0)
-        #equad = parameter.Uniform(-8.5, -5)
     else:
         efac = parameter.Constant(efac_start) 
-        #equad = parameter.Constant(wn_params[1])
-    
-    ef = white_signals.MeasurementNoise(efac=efac)
+
+    if include_equad_ecorr:
+        equad = parameter.Constant()
+        ecorr = parameter.Constant()
+
+    if wn_backend_selection:
+        selection = selections.Selection(selections.by_backend)
+        ef = white_signals.MeasurementNoise(efac=efac, selection=selection)
+        if include_equad_ecorr:
+            eq = white_signals.EquadNoise(log10_equad=equad, selection=selection)
+            ec = white_signals.EcorrKernelNoise(log10_ecorr=ecorr, selection=selection)
+    else:
+        ef = white_signals.MeasurementNoise(efac=efac)
+        if include_equad_ecorr:
+            eq = white_signals.EquadNoise(log10_equad=equad)
+            ec = white_signals.EcorrKernelNoise(log10_ecorr=ecorr)
+
     #eq = white_signals.EquadNoise(log10_equad=equad)
     tm = gp_signals.TimingModel(use_svd=True)
 
     base_model = ef + tm
+    if include_equad_ecorr:
+        base_model = base_model + eq + ec
     
     #adding red noise if included
     if include_rn:
@@ -1575,6 +1593,12 @@ def get_ptas(pulsars, vary_white_noise=True, include_rn=True, vary_rn=True, incl
         #set the likelihood to unity if we are in prior recovery mode
         if prior_recovery:
             PTA.append(get_prior_recovery_pta(signal_base.PTA(model)))
+        elif noisedict_file is not None:
+            with open(noisedict_file, 'r') as fp:
+                noisedict = json.load(fp)
+            pta = signal_base.PTA(model)
+            pta.set_default_params(noisedict)
+            PTA.append(pta)
         else:
             PTA.append(signal_base.PTA(model))
 
@@ -1590,6 +1614,12 @@ def get_ptas(pulsars, vary_white_noise=True, include_rn=True, vary_rn=True, incl
             #set the likelihood to unity if we are in prior recovery mode
             if prior_recovery:
                 PTA.append(get_prior_recovery_pta(signal_base.PTA(model_gwb)))
+            elif noisedict_file is not None:
+                with open(noisedict_file, 'r') as fp:
+                    noisedict = json.load(fp)
+                pta = signal_base.PTA(model_gwb)
+                pta.set_default_params(noisedict)
+                PTA.append(pta)
             else:
                 PTA.append(signal_base.PTA(model_gwb))
         ptas.append(PTA)
