@@ -1232,58 +1232,6 @@ def transdim_postprocess(samples, pulsars=None, ptas=None, separation_method='ma
                         source_on_idxs[freq_idx].append(i)
         return sample_dict, source_on_idxs
 
-    elif separation_method=='match':
-        if ptas is None:
-            pta = get_ptas(pulsars,include_rn=False, include_gwb=False, vary_white_noise=False)[1][0]
-        else:
-            pta = ptas[1][0]
-        print(pta.params)
-        avg_params = {} #actually max-L from given group
-        sample_dict = {}
-        source_on_idxs = {}
-        n_on = 0
-        n_found = 0
-        param_names = ['cos_gwtheta', 'cos_inc', 'gwphi', 'log10_fgw', 'log10_h', 'phase0', 'psi']
-        for i in range(N):
-            if i%status_every==0:
-                print('Progress: {0:2.2f}% '.format(i/N*100))
-            for j in range(max_n_source):
-                params = samples[i,1+7*j:1+7*(j+1)]
-                if not np.isnan(params[0]):
-                    n_on += 1
-                    new = True
-                    matches = []
-                    for key in avg_params.keys():
-                        if np.abs(params[3]-avg_params[key][3])<f_tol:
-                            pp = {'0_'+pname:value for pname, value in zip(param_names, params)}
-                            pp_avg = {'0_'+pname:value for pname, value in zip(param_names, avg_params[key])}
-                            #match_matrix = get_match_matrix(pta, [params, avg_params[key]])
-                            match_matrix = get_match_matrix(pta, [pp, pp_avg])
-                            match = match_matrix[0,1]
-                            if match>match_tol:
-                                new = False
-                                matches.append((match, key))
-                    if new:
-                        avg_params[n_found] = params
-                        sample_dict[n_found] = np.array([list(params),])
-                        source_on_idxs[n_found] = [i,]
-                        n_found += 1
-                    else:
-                        max_match = -1.0
-                        for match, key in matches:
-                            if match > max_match:
-                                max_match = match
-                                best_idx = key
-                        sample_dict[best_idx] = np.append(sample_dict[best_idx], np.array([list(params),]), axis=0)
-                        #use max-L parameters instead of average
-                        delta_log_L = pta.get_lnlikelihood(params) - pta.get_lnlikelihood(avg_params[best_idx])
-                        #print(delta_log_L)
-                        if delta_log_L>0.0:
-                            avg_params[best_idx] = params
-                        source_on_idxs[best_idx].append(i)
-        print(n_on, n_found)
-        return sample_dict, source_on_idxs, avg_params
-    
     elif separation_method=="match-max-L":
         param_names = ['cos_gwtheta', 'cos_inc', 'gwphi', 'log10_fgw', 'log10_h', 'phase0', 'psi']
         psrlist = [p.name for p in pulsars]
@@ -1303,6 +1251,7 @@ def transdim_postprocess(samples, pulsars=None, ptas=None, separation_method='ma
             max_logL = 0.0
             n_remaining = 0
             log_L = []
+            #Find the sample with the highest likelihood
             for i in range(N):
                 if i not in flagged_is:
                     if i%status_every==0:
@@ -1328,55 +1277,40 @@ def transdim_postprocess(samples, pulsars=None, ptas=None, separation_method='ma
             
             flagged_is.append(maxL_i)
 
-            #n_source = int(samples[maxL_i, 0])
-            #samples_current = np.delete(samples[maxL_i,1:], range(n_source*7,max_n_source*7))
-            #print(maxL_i)
+            #Find the source within the highest likelihood sample that has the highest delta likelihood when the source is removed
             max_delta_L = 0.0
-            #for maxL_i in range(N):
-            for kamu in range(1): #cheat to go back to maxL selection form max deltaL selection
-                n_source = int(samples[maxL_i, 0])
-                if include_gwb:
-                    gwb_on = int(samples[maxL_i,-1]!=0.0)
-                else:
-                    gwb_on = 0
-                samples_current = np.delete(samples[maxL_i,1:], range(n_source*7,max_n_source*7))
-                for remove_index in range(n_source):
-                    if (maxL_i, remove_index) not in flagged_ij:
-                        n_remaining += 1
-                        if (maxL_i, remove_index) in delta_L_dict:
-                            delta_L = delta_L_dict[(maxL_i, remove_index)]
-                        else:
-                            new_point = np.delete(samples_current, range(remove_index*7,(remove_index+1)*7))
-                            #print(n_source)
-                            #print(samples_current)
-                            #print(new_point)
-                            #log_L.append(ptas[n_source][gwb_on].get_lnlikelihood(samples_current))
-                            #delta_L = logL_dict[maxL_i] - ptas[(n_source-1)][gwb_on].get_lnlikelihood(new_point)
-                            delta_L = ptas[n_source][gwb_on].get_lnlikelihood(samples_current) - ptas[(n_source-1)][gwb_on].get_lnlikelihood(new_point)
-                            delta_L_dict[(maxL_i, remove_index)] = delta_L
-                        #print(delta_L)
-                        if delta_L>max_delta_L:
-                            max_delta_L = delta_L
-                            max_L_ij = [maxL_i, remove_index]
+            n_source = int(samples[maxL_i, 0])
+            if include_gwb:
+                gwb_on = int(samples[maxL_i,-1]!=0.0)
+            else:
+                gwb_on = 0
+            samples_current = np.delete(samples[maxL_i,1:], range(n_source*7,max_n_source*7))
+            for remove_index in range(n_source):
+                if (maxL_i, remove_index) not in flagged_ij:
+                    n_remaining += 1
+                    if (maxL_i, remove_index) in delta_L_dict:
+                        delta_L = delta_L_dict[(maxL_i, remove_index)]
+                    else:
+                        new_point = np.delete(samples_current, range(remove_index*7,(remove_index+1)*7))
+                        delta_L = ptas[n_source][gwb_on].get_lnlikelihood(samples_current) - ptas[(n_source-1)][gwb_on].get_lnlikelihood(new_point)
+                        delta_L_dict[(maxL_i, remove_index)] = delta_L
+                    if delta_L>max_delta_L:
+                        max_delta_L = delta_L
+                        max_L_ij = [maxL_i, remove_index]
 
             flagged_ij.append((max_L_ij[0],max_L_ij[1]))
-            #plt.figure()
-            #plt.hist(log_L,100)
-            #plt.ylim((0,45))
-            #plt.savefig("logl_hist.png", dpi=300)
             print("Remaining samples = ", n_remaining)
-            #print("L =", max_logL)
             print("Delta L = ",max_delta_L)
             print("SNR = ", np.sqrt(2*max_delta_L))
             print("n_source for max_L sample = ",samples[max_L_ij[0],0])
             print("gwb_on for max_L sample = ",int(samples[max_L_ij[0],-1]!=0.0))
-            #if max_delta_L>12.5: #SNR>5
             #if max_delta_L>8: #SNR>4
             #if max_delta_L>4.5: #SNR>3
             if max_logL>0.0:
                 param_SNR = np.sqrt(get_similarity_matrix(pta, [{'0_'+pname:value for pname, value in zip(param_names, samples[max_L_ij[0],1+7*max_L_ij[1]:1+7*(max_L_ij[1]+1)])}, 
                                                                 {'0_'+pname:value for pname, value in zip(param_names, samples[max_L_ij[0],1+7*max_L_ij[1]:1+7*(max_L_ij[1]+1)])}],
                                                           noise_param_dict={psr_name+"_efac":ef for psr_name,ef in zip(psrlist,samples[max_L_ij[0],1+7*max_n_source:1+7*max_n_source+len(psrlist)])})[0,0] )
+                #check if SNR of suggested soure is higher than 5
                 if param_SNR>5.0:
                     params_max_L[n_found] = {'0_'+pname:value for pname, value in zip(param_names, samples[max_L_ij[0],1+7*max_L_ij[1]:1+7*(max_L_ij[1]+1)])}
                     sample_dict[n_found] = np.array([list(samples[max_L_ij[0],1+7*max_L_ij[1]:1+7*(max_L_ij[1]+1)]),])
@@ -1388,6 +1322,7 @@ def transdim_postprocess(samples, pulsars=None, ptas=None, separation_method='ma
                     print("Params: ", params_max_L[n_found])
                     print("SNR from params = ", np.sqrt(get_similarity_matrix(pta, [params_max_L[n_found], params_max_L[n_found]], noise_param_dict=nparam_dict_max_L[n_found])[0,0] ) )
 
+                    #find all samples corresponding to this source
                     n_added = 0
                     for i in range(N):
                         if i%status_every==0:
