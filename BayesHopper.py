@@ -102,6 +102,7 @@ def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, n_source_prior='flat'
     
     num_noise_params = 0
     if vary_white_noise:
+        num_wn_params = len(pulsars)
         num_noise_params += len(pulsars)
     if vary_rn:
         num_noise_params += 2
@@ -271,10 +272,10 @@ Draw from prior: {3:.2f}%\nDifferential evolution jump: {4:.2f}%\nNoise jump: {7
                     if n_source!=0:
                         if include_gwb:
                             gwb_on = int(samples[j,i,max_n_source*7+1+num_noise_params]!=0.0)
-                            eigvec_rn = get_fisher_eigenvectors(np.delete(samples[j,i,1:], range(n_source*7,max_n_source*7)), ptas[n_source][gwb_on], T_chain=Ts[j], n_source=1, dim=3, offset=n_source*7+len(pulsars))
+                            eigvec_rn = get_fisher_eigenvectors(np.delete(samples[j,i,1:], range(n_source*7,max_n_source*7)), ptas[n_source][gwb_on], T_chain=Ts[j], n_source=1, dim=3, offset=n_source*7+num_wn_params)
                         else:
                             gwb_on = 0
-                            eigvec_rn = get_fisher_eigenvectors(np.delete(samples[j,i,1:], range(n_source*7,max_n_source*7)), ptas[n_source][0], T_chain=Ts[j], n_source=1, dim=2, offset=n_source*7+len(pulsars))
+                            eigvec_rn = get_fisher_eigenvectors(np.delete(samples[j,i,1:], range(n_source*7,max_n_source*7)), ptas[n_source][0], T_chain=Ts[j], n_source=1, dim=2, offset=n_source*7+num_wn_params)
                         eigenvectors = get_fisher_eigenvectors(np.delete(samples[j,i,1:], range(n_source*7,max_n_source*7)), ptas[n_source][gwb_on], T_chain=Ts[j], n_source=n_source)
                         if np.all(eigenvectors):
                             eig[j,:n_source,:,:] = eigenvectors
@@ -283,9 +284,9 @@ Draw from prior: {3:.2f}%\nDifferential evolution jump: {4:.2f}%\nNoise jump: {7
                     else:
                         if include_gwb:
                             gwb_on = int(samples[j,i,max_n_source*7+1+num_noise_params]!=0.0)
-                            eigvec_rn = get_fisher_eigenvectors(np.delete(samples[j,i,1:], range(n_source*7,max_n_source*7)), ptas[n_source][gwb_on], T_chain=Ts[j], n_source=1, dim=3, offset=n_source*7+len(pulsars))
+                            eigvec_rn = get_fisher_eigenvectors(np.delete(samples[j,i,1:], range(n_source*7,max_n_source*7)), ptas[n_source][gwb_on], T_chain=Ts[j], n_source=1, dim=3, offset=n_source*7+num_wn_params)
                         else:
-                            eigvec_rn = get_fisher_eigenvectors(np.delete(samples[j,i,1:], range(n_source*7,max_n_source*7)), ptas[n_source][0], T_chain=Ts[j], n_source=1, dim=2, offset=n_source*7+len(pulsars))
+                            eigvec_rn = get_fisher_eigenvectors(np.delete(samples[j,i,1:], range(n_source*7,max_n_source*7)), ptas[n_source][0], T_chain=Ts[j], n_source=1, dim=2, offset=n_source*7+num_wn_params)
                         #check if eigenvector calculation was succesful
                         #if not, we just keep the initializes eig full of 0.1 values
                         if np.all(eigvec_rn):
