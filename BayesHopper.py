@@ -100,9 +100,10 @@ def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, n_source_prior='flat'
     if include_gwb:
         num_params += 1
     
+    num_wn_params = 0
     num_noise_params = 0
     if vary_white_noise:
-        num_wn_params = len(pulsars)
+        num_wn_params += len(pulsars)
         num_noise_params += len(pulsars)
     if vary_rn:
         num_noise_params += 2
