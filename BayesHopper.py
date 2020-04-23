@@ -35,7 +35,8 @@ def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, n_source_prior='flat'
                vary_white_noise=False, efac_start=1.0,
                include_gwb=False, gwb_switch_weight=0, include_psr_term=False,
                include_rn=False, vary_rn=False, rn_params=[-13.0,1.0], jupyter_notebook=False,
-               gwb_on_prior=0.5, include_equad_ecorr=False, wn_backend_selection=False, noisedict_file=None):
+               gwb_on_prior=0.5, include_equad_ecorr=False, wn_backend_selection=False, noisedict_file=None,
+               save_every_n=10000, savefile=None):
 
     ptas = get_ptas(pulsars, vary_white_noise=vary_white_noise, include_equad_ecorr=include_equad_ecorr, wn_backend_selection=wn_backend_selection, noisedict_file=noisedict_file, include_rn=include_rn, vary_rn=vary_rn, include_gwb=include_gwb, max_n_source=max_n_source, efac_start=efac_start, rn_amp_prior=rn_amp_prior, rn_log_amp_range=rn_log_amp_range, rn_params=rn_params, gwb_amp_prior=gwb_amp_prior, gwb_log_amp_range=gwb_log_amp_range, n_comp_gwb=n_comp_gwb, cw_amp_prior=cw_amp_prior, cw_log_amp_range=cw_log_amp_range, cw_f_range=cw_f_range, include_psr_term=include_psr_term, prior_recovery=prior_recovery)
 
@@ -248,6 +249,9 @@ Draw from prior: {3:.2f}%\nDifferential evolution jump: {4:.2f}%\nNoise jump: {7
           de_probability*100, RJ_probability*100, gwb_switch_probability*100, noise_jump_probability*100))
 
     for i in range(int(N-1)):
+        #write results to file
+        if savefile is not None and i%save_every_n==0 and i!=0:
+            np.savez(savefile, samples=samples, acc_fraction=acc_fraction, swap_record=swap_record)
         #add current sample to DE history
         if i%n_de_history==0 and i>=de_start_iter and de_probability!=0:
             de_hist_index = int((i-de_start_iter)/n_de_history)%history_size
