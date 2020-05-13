@@ -251,7 +251,7 @@ Draw from prior: {3:.2f}%\nDifferential evolution jump: {4:.2f}%\nNoise jump: {7
     for i in range(int(N-1)):
         #write results to file
         if savefile is not None and i%save_every_n==0 and i!=0:
-            np.savez(savefile, samples=samples, acc_fraction=acc_fraction, swap_record=swap_record)
+            np.savez(savefile, samples=samples[:,:i,:], acc_fraction=acc_fraction, swap_record=swap_record)
         #add current sample to DE history
         if i%n_de_history==0 and i>=de_start_iter and de_probability!=0:
             de_hist_index = int((i-de_start_iter)/n_de_history)%history_size
