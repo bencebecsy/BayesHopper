@@ -339,7 +339,7 @@ Draw from prior: {3:.2f}%\nDifferential evolution jump: {4:.2f}%\nNoise jump: {7
                 noise_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, eig_wn, include_gwb, num_noise_params, vary_white_noise)
             #regular step
             else:
-                regular_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, eig, eig_gwb_rn, include_gwb, num_noise_params, vary_rn)
+                regular_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, eig, eig_gwb_rn, include_gwb, num_noise_params, num_wn_params, vary_rn)
     
     acc_fraction = a_yes/(a_no+a_yes)
     return samples, acc_fraction, swap_record, rj_record
@@ -853,7 +853,7 @@ def do_fe_global_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, 
 #
 ################################################################################
 
-def regular_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, eig, eig_gwb_rn, include_gwb, num_noise_params, vary_rn):
+def regular_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, eig, eig_gwb_rn, include_gwb, num_noise_params, num_wn_params, vary_rn):
     for j in range(n_chain):
         n_source = int(np.copy(samples[j,i,0]))
 
@@ -901,9 +901,9 @@ def regular_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, eig, 
             if gwb_on==0 and include_gwb:
                 jump_gwb[-1] = 0
             if include_gwb:
-                jump = np.array([jump_gwb[int(i-n_source*7-len(ptas[n_source][gwb_on].pulsars))] if i>=n_source*7+len(ptas[n_source][gwb_on].pulsars) and i<n_source*7+num_noise_params+1 else 0.0 for i in range(samples_current.size)])
+                jump = np.array([jump_gwb[int(i-n_source*7-num_wn_params)] if i>=n_source*7+num_wn_params and i<n_source*7+num_noise_params+1 else 0.0 for i in range(samples_current.size)])
             else:
-                jump = np.array([jump_gwb[int(i-n_source*7-len(ptas[n_source][gwb_on].pulsars))] if i>=n_source*7+len(ptas[n_source][gwb_on].pulsars) and i<n_source*7+num_noise_params else 0.0 for i in range(samples_current.size)])
+                jump = np.array([jump_gwb[int(i-n_source*7-num_wn_params)] if i>=n_source*7+num_wn_params and i<n_source*7+num_noise_params else 0.0 for i in range(samples_current.size)])
             #if j==0: print('gwb+rn')
             #if j==0: print(i)
             #if j==0: print(jump)
