@@ -388,35 +388,35 @@ def rn_switch_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, var
             amp_proposal_old = sampling_parameter.get_pdf(old_log_amp)
             gamma_proposal_old = ptas[n_source][gwb_on][1].params[n_source*7+num_noise_params-2].get_pdf(old_gamma)
     
-            if j==0:
-                print('- -')
-                print(samples_current)
-                print(new_point)
-                print(n_source*7+num_noise_params-2, n_source*7+num_noise_params)
-                print(np.delete(new_point, range(n_source*7+num_noise_params-2, n_source*7+num_noise_params)))
-                print(old_log_amp)
-                print(old_gamma)
-                print(np.exp(log_acc_ratio))
-                #print(amp_proposal_old)
-                #print(gamma_proposal_old)
+            #if j==0:
+            #    print('- -')
+            #    print(samples_current)
+            #    print(new_point)
+            #    print(n_source*7+num_noise_params-2, n_source*7+num_noise_params)
+            #    print(np.delete(new_point, range(n_source*7+num_noise_params-2, n_source*7+num_noise_params)))
+            #    print(old_log_amp)
+            #    print(old_gamma)
+            #    print(np.exp(log_acc_ratio))
+            #    #print(amp_proposal_old)
+            #    #print(gamma_proposal_old)
 
             acc_ratio = np.exp(log_acc_ratio)*amp_proposal_old*gamma_proposal_old
-            if j==0:
-                print(acc_ratio)
+            #if j==0:
+            #    print(acc_ratio)
             #apply on/off prior
             acc_ratio *= (1-rn_on_prior)/rn_on_prior
             #if j==0: print(acc_ratio)
             if np.random.uniform()<=acc_ratio:
-                if j==0: print('wooooow')
+                #if j==0: print('wooooow')
                 samples[j,i+1,0] = n_source
                 samples[j,i+1,1:n_source*7+1] = new_point[:n_source*7]
                 samples[j,i+1,max_n_source*7+1:] = new_point[n_source*7:]
-                if j==0:
-                    print(samples[j,i,:])
-                    print(samples[j,i+1,:])
+                #if j==0:
+                #    print(samples[j,i,:])
+                #    print(samples[j,i+1,:])
                 a_yes[0] += 1
             else:
-                if j==0: print("Neh")
+                #if j==0: print("Neh")
                 samples[j,i+1,:] = samples[j,i,:]
                 a_no[0] += 1
         #turning on ----------------------------------------------------------------------------------------------------------
@@ -449,33 +449,33 @@ def rn_switch_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, var
             amp_proposal_new = sampling_parameter.get_pdf(new_log_amp)
             gamma_proposal_new = ptas[n_source][gwb_on][1].params[n_source*7+num_noise_params-2].get_pdf(new_gamma)
 
-            if j==0:
-                print("+ +")
-                print(samples_current)
-                print(new_point)
-                print(n_source*7+num_noise_params-2, n_source*7+num_noise_params)
-                print(np.delete(samples_current, range(n_source*7+num_noise_params-2, n_source*7+num_noise_params)))
-                print(np.exp(log_acc_ratio))
-                #print(amp_proposal_new)
-                #print(gamma_proposal_new)
+            #if j==0:
+            #    print("+ +")
+            #    print(samples_current)
+            #    print(new_point)
+            #    print(n_source*7+num_noise_params-2, n_source*7+num_noise_params)
+            #    print(np.delete(samples_current, range(n_source*7+num_noise_params-2, n_source*7+num_noise_params)))
+            #    print(np.exp(log_acc_ratio))
+            #    #print(amp_proposal_new)
+            #    #print(gamma_proposal_new)
 
             acc_ratio = np.exp(log_acc_ratio)/amp_proposal_new/gamma_proposal_new
-            if j==0:
-                print(acc_ratio)
+            #if j==0:
+            #    print(acc_ratio)
             #apply on/off prior
             acc_ratio *= rn_on_prior/(1-rn_on_prior)
             #if j==0: print(acc_ratio)
             if np.random.uniform()<=acc_ratio:
-                if j==0: print('yeeee')
+                #if j==0: print('yeeee')
                 samples[j,i+1,0] = n_source
                 samples[j,i+1,1:n_source*7+1] = new_point[:n_source*7]
                 samples[j,i+1,max_n_source*7+1:] = new_point[n_source*7:]
-                if j==0:
-                    print(samples[j,i,:])
-                    print(samples[j,i+1,:])
+                #if j==0:
+                #    print(samples[j,i,:])
+                #    print(samples[j,i+1,:])
                 a_yes[0] += 1
             else:
-                if j==0: print("Meh")
+                #if j==0: print("Meh")
                 samples[j,i+1,:] = samples[j,i,:]
                 a_no[0] += 1
 
