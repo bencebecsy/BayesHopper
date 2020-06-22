@@ -162,8 +162,8 @@ def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, n_source_prior='flat'
             eig_wn[j,:,:] = wn_eigvec[0,:,:]
 
     #setting up arrays to record acceptance and swaps
-    a_yes=np.zeros(n_chain+2)
-    a_no=np.zeros(n_chain+2)
+    a_yes=np.zeros((8,n_chain)) #columns: chain number; rows: proposal type (RJ_CW, gwb_switch, rn_switch, rn_gwb, PT, Fe, fisher, noise_jump)
+    a_no=np.zeros((8,n_chain))
     swap_record = []
     rj_record = []
 
@@ -260,14 +260,11 @@ Draw from prior: {3:.2f}%\nDifferential evolution jump: {4:.2f}%\nNoise jump: {9
         if i%n_status_update==0:
             acc_fraction = a_yes/(a_no+a_yes)
             if jupyter_notebook:
-                print('Progress: {0:2.2f}% '.format(i/N*100) +
-                      'Acceptance fraction (RJ, swap, each chain): ({0:1.2f}, {1:1.2f}, '.format(acc_fraction[0], acc_fraction[1]) +
-                      ', '.join(['{{{}:1.2f}}'.format(i) for i in range(n_chain)]).format(*acc_fraction[2:]) +
-                      ')' + '\r',end='')
+                print('Progress: {0:2.2f}% '.format(i/N*100) + '\r',end='')
             else:
                 print('Progress: {0:2.2f}% '.format(i/N*100) +
-                      'Acceptance fraction (RJ, swap, each chain): ({0:1.2f}, {1:1.2f}, '.format(acc_fraction[0], acc_fraction[1]) +
-                      ', '.join(['{{{}:1.2f}}'.format(i) for i in range(n_chain)]).format(*acc_fraction[2:]) + ')')
+                      'Acceptance fraction #columns: chain number; rows: proposal type (RJ_CW, gwb_switch, rn_switch, rn_gwb, PT, Fe, fisher, noise_jump):')
+                print(acc_fraction)      
         #update our eigenvectors from the fisher matrix every n_fish_update iterations
         if i%n_fish_update==0 and i>=n_global_first:
             #only update T>1 chains every 10th time
@@ -368,12 +365,12 @@ def rn_gwb_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, vary_w
         #no gwb or rn on -- nothing to vary
         if gwb_on==0 and rn_on==0:
             samples[j,i+1,:] = samples[j,i,:]
-            a_no[0] += 1
+            a_no[3,j] += 1
             #print("Nothing to vary!")
         #Both are on -- miximng move -- to be implemented
         elif gwb_on==1 and rn_on==1:
             samples[j,i+1,:] = samples[j,i,:]
-            a_no[0] += 1
+            a_no[3,j] += 1
             #print("Nothing to vary!")
         #Switching from GWB to RN
         elif gwb_on==1 and rn_on==0:
@@ -401,21 +398,21 @@ def rn_gwb_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, vary_w
             acc_ratio *= (1-gwb_on_prior)/gwb_on_prior
             acc_ratio *= rn_on_prior/(1-rn_on_prior)
 
-            if j==0: print(acc_ratio)
+            #if j==0: print(acc_ratio)
 
             if np.random.uniform()<=acc_ratio:
-                if j==0: print('wooooow')
+                #if j==0: print('wooooow')
                 samples[j,i+1,0] = n_source
                 samples[j,i+1,1:n_source*7+1] = new_point[:n_source*7]
                 samples[j,i+1,max_n_source*7+1:] = new_point[n_source*7:]
                 #if j==0:
                 #    print(samples[j,i,:])
                 #    print(samples[j,i+1,:])
-                a_yes[0] += 1
+                a_yes[3,j] += 1
             else:
                 #if j==0: print("Neh")
                 samples[j,i+1,:] = samples[j,i,:]
-                a_no[0] += 1
+                a_no[3,j] += 1
 
         #Switching from RN to GWB
         else:
@@ -442,21 +439,21 @@ def rn_gwb_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, vary_w
             acc_ratio *= (1-rn_on_prior)/rn_on_prior
             acc_ratio *= gwb_on_prior/(1-gwb_on_prior)
 
-            if j==0: print(acc_ratio)
+            #if j==0: print(acc_ratio)
 
             if np.random.uniform()<=acc_ratio:
-                if j==0: print('oowoo')
+                #if j==0: print('oowoo')
                 samples[j,i+1,0] = n_source
                 samples[j,i+1,1:n_source*7+1] = new_point[:n_source*7]
                 samples[j,i+1,max_n_source*7+1:] = new_point[n_source*7:]
                 #if j==0:
                 #    print(samples[j,i,:])
                 #    print(samples[j,i+1,:])
-                a_yes[0] += 1
+                a_yes[3,j] += 1
             else:
                 #if j==0: print("Neh")
                 samples[j,i+1,:] = samples[j,i,:]
-                a_no[0] += 1
+                a_no[3,j] += 1
 
 ################################################################################
 #
@@ -526,11 +523,11 @@ def rn_switch_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, var
                 #if j==0:
                 #    print(samples[j,i,:])
                 #    print(samples[j,i+1,:])
-                a_yes[0] += 1
+                a_yes[2,j] += 1
             else:
                 #if j==0: print("Neh")
                 samples[j,i+1,:] = samples[j,i,:]
-                a_no[0] += 1
+                a_no[2,j] += 1
         #turning on ----------------------------------------------------------------------------------------------------------
         else:
             #if j==0: print("Turn on")
@@ -585,11 +582,11 @@ def rn_switch_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, var
                 #if j==0:
                 #    print(samples[j,i,:])
                 #    print(samples[j,i+1,:])
-                a_yes[0] += 1
+                a_yes[2,j] += 1
             else:
                 #if j==0: print("Meh")
                 samples[j,i+1,:] = samples[j,i,:]
-                a_no[0] += 1
+                a_no[2,j] += 1
 
 ################################################################################
 #
@@ -642,10 +639,10 @@ def gwb_switch_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, va
                 samples[j,i+1,0] = n_source
                 samples[j,i+1,1:n_source*7+1] = new_point[:n_source*7]
                 samples[j,i+1,max_n_source*7+1:] = new_point[n_source*7:]
-                a_yes[0] += 1
+                a_yes[1,j] += 1
             else:
                 samples[j,i+1,:] = samples[j,i,:]
-                a_no[0] += 1
+                a_no[1,j] += 1
         #turning on ----------------------------------------------------------------------------------------------------------
         else:
             #if j==0: print("Turn on")
@@ -682,10 +679,10 @@ def gwb_switch_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, va
                 samples[j,i+1,0] = n_source
                 samples[j,i+1,1:n_source*7+1] = new_point[:n_source*7]
                 samples[j,i+1,max_n_source*7+1:] = new_point[n_source*7:]
-                a_yes[0] += 1
+                a_yes[1,j] += 1
             else:
                 samples[j,i+1,:] = samples[j,i,:]
-                a_no[0] += 1
+                a_no[1,j] += 1
 
 ################################################################################
 #
@@ -781,10 +778,10 @@ def do_rj_move(n_chain, max_n_source, n_source_prior, ptas, samples, i, Ts, a_ye
                 samples[j,i+1,0] = n_source+1
                 samples[j,i+1,1:(n_source+1)*7+1] = new_point[:(n_source+1)*7]
                 samples[j,i+1,max_n_source*7+1:] = new_point[(n_source+1)*7:]
-                a_yes[0] += 1
+                a_yes[0,j] += 1
             else:
                 samples[j,i+1,:] = samples[j,i,:]
-                a_no[0] += 1
+                a_no[0,j] += 1
 
            
         elif n_source==max_n_source or (direction_decide>add_prob and n_source!=0):   #removing a signal----------------------------------------------------------
@@ -840,10 +837,10 @@ def do_rj_move(n_chain, max_n_source, n_source_prior, ptas, samples, i, Ts, a_ye
                 samples[j,i+1,0] = n_source-1
                 samples[j,i+1,1:(n_source-1)*7+1] = new_point[:(n_source-1)*7]
                 samples[j,i+1,max_n_source*7+1:] = new_point[(n_source-1)*7:]
-                a_yes[0] += 1
+                a_yes[0,j] += 1
             else:
                 samples[j,i+1,:] = samples[j,i,:]
-                a_no[0] += 1
+                a_no[0,j] += 1
 
 ################################################################################
 #
@@ -950,7 +947,7 @@ def do_fe_global_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, 
         n_source = int(np.copy(samples[j,i,0]))
         if n_source==0:
             samples[j,i+1,:] = samples[j,i,:]
-            a_no[j+2]+=1
+            a_no[5,j]+=1
             #print("No source to vary!")
             continue
 
@@ -1099,10 +1096,10 @@ def do_fe_global_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, 
             samples[j,i+1,0] = n_source
             samples[j,i+1,1:n_source*7+1] = new_point[:n_source*7]
             samples[j,i+1,max_n_source*7+1:] = new_point[n_source*7:]
-            a_yes[j+2]+=1
+            a_yes[5,j]+=1
         else:
             samples[j,i+1,:] = samples[j,i,:]
-            a_no[j+2]+=1
+            a_no[5,j]+=1
     
 
 ################################################################################
@@ -1141,7 +1138,7 @@ def regular_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, eig, 
         #case #4: nothing to vary
         else:
             samples[j,i+1,:] = samples[j,i,:]
-            a_no[j+2]+=1
+            a_no[6,j]+=1
             #print("Nothing to vary!")
             continue
         
@@ -1188,10 +1185,10 @@ def regular_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, eig, 
             samples[j,i+1,0] = n_source
             samples[j,i+1,1:n_source*7+1] = new_point[:n_source*7]
             samples[j,i+1,max_n_source*7+1:] = new_point[n_source*7:]
-            a_yes[j+2]+=1
+            a_yes[6,j]+=1
         else:
             samples[j,i+1,:] = samples[j,i,:]
-            a_no[j+2]+=1
+            a_no[6,j]+=1
 
 ################################################################################
 #
@@ -1234,10 +1231,10 @@ def noise_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, eig_wn,
             samples[j,i+1,0] = n_source
             samples[j,i+1,1:n_source*7+1] = new_point[:n_source*7]
             samples[j,i+1,max_n_source*7+1:] = new_point[n_source*7:]
-            a_yes[j+2]+=1
+            a_yes[7,j]+=1
         else:
             samples[j,i+1,:] = samples[j,i,:]
-            a_no[j+2]+=1
+            a_no[7,j]+=1
 
 
 ################################################################################
@@ -1278,12 +1275,12 @@ def do_pt_swap(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, swap_re
                 samples[j,i+1,:] = samples[j-1,i,:]
             else:
                 samples[j,i+1,:] = samples[j,i,:]
-        a_yes[1]+=1
+        a_yes[4,swap_chain]+=1
         swap_record.append(swap_chain)
     else:
         for j in range(n_chain):
             samples[j,i+1,:] = samples[j,i,:]
-        a_no[1]+=1
+        a_no[4,swap_chain]+=1
 
 ################################################################################
 #
