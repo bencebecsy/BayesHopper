@@ -36,7 +36,8 @@ def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, n_source_prior='flat'
                include_gwb=False, gwb_switch_weight=0, include_psr_term=False,
                include_rn=False, vary_rn=False, rn_params=[-13.0,1.0], rn_on_prior=0.5, rn_switch_weight=0, jupyter_notebook=False,
                gwb_on_prior=0.5, include_equad_ecorr=False, wn_backend_selection=False, noisedict_file=None,
-               save_every_n=10000, savefile=None):
+               save_every_n=10000, savefile=None,
+               rn_gwb_move_weight=0):
 
     ptas = get_ptas(pulsars, vary_white_noise=vary_white_noise, include_equad_ecorr=include_equad_ecorr, wn_backend_selection=wn_backend_selection, noisedict_file=noisedict_file, include_rn=include_rn, vary_rn=vary_rn, include_gwb=include_gwb, max_n_source=max_n_source, efac_start=efac_start, rn_amp_prior=rn_amp_prior, rn_log_amp_range=rn_log_amp_range, rn_params=rn_params, gwb_amp_prior=gwb_amp_prior, gwb_log_amp_range=gwb_log_amp_range, n_comp_gwb=n_comp_gwb, cw_amp_prior=cw_amp_prior, cw_log_amp_range=cw_log_amp_range, cw_f_range=cw_f_range, include_psr_term=include_psr_term, prior_recovery=prior_recovery)
 
@@ -230,7 +231,7 @@ def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, n_source_prior='flat'
 
     #set up probabilities of different proposals
     total_weight = (regular_weight + PT_swap_weight + Fe_proposal_weight + 
-                    draw_from_prior_weight + de_weight + RJ_weight + gwb_switch_weight + noise_jump_weight + rn_switch_weight)
+                    draw_from_prior_weight + de_weight + RJ_weight + gwb_switch_weight + noise_jump_weight + rn_switch_weight + rn_gwb_move_weight)
     swap_probability = PT_swap_weight/total_weight
     fe_proposal_probability = Fe_proposal_weight/total_weight
     regular_probability = regular_weight/total_weight
@@ -240,11 +241,12 @@ def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, n_source_prior='flat'
     gwb_switch_probability = gwb_switch_weight/total_weight
     rn_switch_probability = rn_switch_weight/total_weight
     noise_jump_probability = noise_jump_weight/total_weight
-    print("Percentage of steps doing different jumps:\nPT swaps: {0:.2f}%\nRJ moves: {5:.2f}%\nGWB-switches: {6:.2f}%\nRN--switches: {7:.2f}%\n\
+    rn_gwb_move_probability = rn_gwb_move_weight/total_weight
+    print("Percentage of steps doing different jumps:\nPT swaps: {0:.2f}%\nRJ moves: {5:.2f}%\nGWB-switches: {6:.2f}%\nRN-switches: {7:.2f}%\nRN-GWB moves: {8:.2f}%\n\
 Fe-proposals: {1:.2f}%\nJumps along Fisher eigendirections: {2:.2f}%\n\
-Draw from prior: {3:.2f}%\nDifferential evolution jump: {4:.2f}%\nNoise jump: {8:.2f}%".format(swap_probability*100,
+Draw from prior: {3:.2f}%\nDifferential evolution jump: {4:.2f}%\nNoise jump: {9:.2f}%".format(swap_probability*100,
           fe_proposal_probability*100, regular_probability*100, draw_from_prior_probability*100,
-          de_probability*100, RJ_probability*100, gwb_switch_probability*100, rn_switch_probability*100, noise_jump_probability*100))
+          de_probability*100, RJ_probability*100, gwb_switch_probability*100, rn_switch_probability*100, rn_gwb_move_probability*100, noise_jump_probability*100))
 
     for i in range(int(N-1)):
         #write results to file
@@ -339,12 +341,122 @@ Draw from prior: {3:.2f}%\nDifferential evolution jump: {4:.2f}%\nNoise jump: {8
             elif (jump_decide<swap_probability+fe_proposal_probability+
                     draw_from_prior_probability+de_probability+RJ_probability+gwb_switch_probability+noise_jump_probability+rn_switch_probability):
                 rn_switch_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, vary_white_noise, include_rn, num_noise_params, rn_on_prior, rn_log_amp_range)
+            #do RN-GWB move
+            elif (jump_decide<swap_probability+fe_proposal_probability+
+                    draw_from_prior_probability+de_probability+RJ_probability+gwb_switch_probability+noise_jump_probability+rn_switch_probability+rn_gwb_move_probability):
+                rn_gwb_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, vary_white_noise, include_rn, include_gwb, num_noise_params, rn_on_prior, rn_log_amp_range, gwb_on_prior, gwb_log_amp_range)
             #regular step
             else:
                 regular_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, eig, eig_gwb_rn, include_gwb, num_noise_params, num_wn_params, vary_rn)
     
     acc_fraction = a_yes/(a_no+a_yes)
     return samples, acc_fraction, swap_record, rj_record
+
+################################################################################
+#
+#RN - GWB MOVE (EXCHANGE IF ONE IS ON, MIXING IF BOTH IS ON)
+#
+################################################################################
+def rn_gwb_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, vary_white_noise, include_rn, include_gwb, num_noise_params, rn_on_prior, rn_log_amp_range, gwb_on_prior, gwb_log_amp_range):
+    if not include_rn or not include_gwb:
+       raise Exception("Both include_rn and include_gwb must be True to use this move")
+    for j in range(n_chain):
+        n_source = int(np.copy(samples[j,i,0]))
+        gwb_on = int(samples[j,i,max_n_source*7+1+num_noise_params]!=0.0)
+        rn_on = int(samples[j,i,max_n_source*7+1+num_noise_params-2]!=0.0)
+
+        #no gwb or rn on -- nothing to vary
+        if gwb_on==0 and rn_on==0:
+            samples[j,i+1,:] = samples[j,i,:]
+            a_no[0] += 1
+            #print("Nothing to vary!")
+        #Both are on -- miximng move -- to be implemented
+        elif gwb_on==1 and rn_on==1:
+            samples[j,i+1,:] = samples[j,i,:]
+            a_no[0] += 1
+            #print("Nothing to vary!")
+        #Switching from GWB to RN
+        elif gwb_on==1 and rn_on==0:
+            samples_current = np.delete(samples[j,i,1:], range(n_source*7,max_n_source*7))
+            new_point = np.delete(samples[j,i,1:], range(n_source*7,max_n_source*7))
+            old_log_amp = np.copy(new_point[n_source*7+num_noise_params])
+            
+            #set gwb_amplitude to zero
+            new_point[n_source*7+num_noise_params] = 0.0
+
+            #instead turn on RN with same amplitude as GWB had and w/ random spectral index
+            new_gamma = ptas[n_source][gwb_on][1].params[n_source*7+num_noise_params-2].sample()
+
+            new_point[n_source*7+num_noise_params-2] = new_gamma #gamma
+            new_point[n_source*7+num_noise_params-1] = old_log_amp #amplitude
+
+            log_acc_ratio = ptas[n_source][0][1].get_lnlikelihood(new_point)/Ts[j]
+            log_acc_ratio += ptas[n_source][0][1].get_lnprior(new_point)
+            log_acc_ratio += -ptas[n_source][1][0].get_lnlikelihood(np.delete(samples_current, range(n_source*7+num_noise_params-2, n_source*7+num_noise_params)))/Ts[j]
+            log_acc_ratio += -ptas[n_source][1][0].get_lnprior(np.delete(samples_current, range(n_source*7+num_noise_params-2, n_source*7+num_noise_params)))
+
+            gamma_proposal_new = ptas[n_source][gwb_on][1].params[n_source*7+num_noise_params-2].get_pdf(new_gamma)
+
+            acc_ratio = np.exp(log_acc_ratio)/gamma_proposal_new
+            acc_ratio *= (1-gwb_on_prior)/gwb_on_prior
+            acc_ratio *= rn_on_prior/(1-rn_on_prior)
+
+            if j==0: print(acc_ratio)
+
+            if np.random.uniform()<=acc_ratio:
+                if j==0: print('wooooow')
+                samples[j,i+1,0] = n_source
+                samples[j,i+1,1:n_source*7+1] = new_point[:n_source*7]
+                samples[j,i+1,max_n_source*7+1:] = new_point[n_source*7:]
+                #if j==0:
+                #    print(samples[j,i,:])
+                #    print(samples[j,i+1,:])
+                a_yes[0] += 1
+            else:
+                #if j==0: print("Neh")
+                samples[j,i+1,:] = samples[j,i,:]
+                a_no[0] += 1
+
+        #Switching from RN to GWB
+        else:
+            samples_current = np.delete(samples[j,i,1:], range(n_source*7,max_n_source*7))
+            new_point = np.delete(samples[j,i,1:], range(n_source*7,max_n_source*7))
+            old_log_amp = np.copy(new_point[n_source*7+num_noise_params-1])
+            old_gamma = np.copy(new_point[n_source*7+num_noise_params-2])
+            
+            #set both amplitude and gamma to zero
+            new_point[n_source*7+num_noise_params-2] = 0.0 #gamma
+            new_point[n_source*7+num_noise_params-1] = 0.0 #amplitude
+
+            #instead turn on GWB with same amplitude as RN had
+            new_point[n_source*7+num_noise_params] = old_log_amp
+
+            log_acc_ratio = ptas[n_source][1][0].get_lnlikelihood(np.delete(new_point, range(n_source*7+num_noise_params-2, n_source*7+num_noise_params)))/Ts[j]
+            log_acc_ratio += ptas[n_source][1][0].get_lnprior(np.delete(new_point, range(n_source*7+num_noise_params-2, n_source*7+num_noise_params)))
+            log_acc_ratio += -ptas[n_source][0][1].get_lnlikelihood(samples_current)/Ts[j]
+            log_acc_ratio += -ptas[n_source][0][1].get_lnprior(samples_current)
+
+            gamma_proposal_old = ptas[n_source][gwb_on][1].params[n_source*7+num_noise_params-2].get_pdf(old_gamma)
+
+            acc_ratio = np.exp(log_acc_ratio)*gamma_proposal_old
+            acc_ratio *= (1-rn_on_prior)/rn_on_prior
+            acc_ratio *= gwb_on_prior/(1-gwb_on_prior)
+
+            if j==0: print(acc_ratio)
+
+            if np.random.uniform()<=acc_ratio:
+                if j==0: print('oowoo')
+                samples[j,i+1,0] = n_source
+                samples[j,i+1,1:n_source*7+1] = new_point[:n_source*7]
+                samples[j,i+1,max_n_source*7+1:] = new_point[n_source*7:]
+                #if j==0:
+                #    print(samples[j,i,:])
+                #    print(samples[j,i+1,:])
+                a_yes[0] += 1
+            else:
+                #if j==0: print("Neh")
+                samples[j,i+1,:] = samples[j,i,:]
+                a_no[0] += 1
 
 ################################################################################
 #
