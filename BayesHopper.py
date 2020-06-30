@@ -369,9 +369,53 @@ def rn_gwb_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, vary_w
             #print("Nothing to vary!")
         #Both are on -- miximng move -- to be implemented
         elif gwb_on==1 and rn_on==1:
-            samples[j,i+1,:] = samples[j,i,:]
-            a_no[3,j] += 1
-            #print("Nothing to vary!")
+            samples_current = np.delete(samples[j,i,1:], range(n_source*7,max_n_source*7))
+            old_gwb_log_amp = np.copy(samples_current[n_source*7+num_noise_params])
+            old_rn_log_amp = np.copy(samples_current[n_source*7+num_noise_params-1])
+
+            #draw randomly exchange fraction, i.e. fraction of GWB to add to RN (if positive) or fraction of RN to add to GWB (if negative)
+            x_fraction = np.random.uniform(low=-1, high=1)
+
+            if x_fraction > 0.0: #removing power from GWB and adding it to RN
+                amp_change = x_fraction * 10**old_gwb_log_amp
+                new_gwb_log_amp = np.log10(10**old_gwb_log_amp - amp_change)
+                new_rn_log_amp = np.log10(10**old_rn_log_amp + amp_change)
+            elif x_fraction < 0.0: #removing power from RN and adding it to GWB
+                amp_change = -x_fraction * 10**old_rn_log_amp
+                new_gwb_log_amp = np.log10(10**old_gwb_log_amp + amp_change)
+                new_rn_log_amp = np.log10(10**old_rn_log_amp - amp_change)
+
+            new_point = np.delete(samples[j,i,1:], range(n_source*7,max_n_source*7))
+            #set gwb and rn amplitude to new values
+            new_point[n_source*7+num_noise_params] = new_gwb_log_amp #gwb
+            new_point[n_source*7+num_noise_params-1] = new_rn_log_amp #rn
+    
+            log_acc_ratio = ptas[n_source][1][1].get_lnlikelihood(new_point)/Ts[j]
+            log_acc_ratio += ptas[n_source][1][1].get_lnprior(new_point)
+            log_acc_ratio += -ptas[n_source][1][1].get_lnlikelihood(samples_current)/Ts[j]
+            log_acc_ratio += -ptas[n_source][1][1].get_lnprior(samples_current)
+            
+            acc_ratio = np.exp(log_acc_ratio)
+
+            #if j==0:
+            #    print(old_gwb_log_amp, new_gwb_log_amp)
+            #    print(old_rn_log_amp, new_rn_log_amp)
+            #    print(acc_ratio)
+
+            if np.random.uniform()<=acc_ratio:
+                #if j==0: print('wooooow')
+                samples[j,i+1,0] = n_source
+                samples[j,i+1,1:n_source*7+1] = new_point[:n_source*7]
+                samples[j,i+1,max_n_source*7+1:] = new_point[n_source*7:]
+                #if j==0:
+                #    print(samples[j,i,:])
+                #    print(samples[j,i+1,:])
+                a_yes[3,j] += 1
+            else:
+                #if j==0: print("Neh")
+                samples[j,i+1,:] = samples[j,i,:]
+                a_no[3,j] += 1
+        
         #Switching from GWB to RN
         elif gwb_on==1 and rn_on==0:
             samples_current = np.delete(samples[j,i,1:], range(n_source*7,max_n_source*7))
