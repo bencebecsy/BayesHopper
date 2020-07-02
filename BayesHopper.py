@@ -34,12 +34,12 @@ def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, n_source_prior='flat'
                gwb_log_amp_range=[-18,-11], n_comp_gwb=30, rn_log_amp_range=[-18,-11], cw_log_amp_range=[-18,-11], cw_f_range=[3.5e-9,1e-7],
                vary_white_noise=False, efac_start=1.0,
                include_gwb=False, gwb_switch_weight=0, include_psr_term=False,
-               include_rn=False, vary_rn=False, rn_params=[-13.0,1.0], rn_on_prior=0.5, rn_switch_weight=0, jupyter_notebook=False,
+               include_rn=False, include_per_psr_rn=False, vary_rn=False, rn_params=[-13.0,1.0], rn_on_prior=0.5, rn_switch_weight=0, jupyter_notebook=False,
                gwb_on_prior=0.5, include_equad_ecorr=False, wn_backend_selection=False, noisedict_file=None,
                save_every_n=10000, savefile=None,
                rn_gwb_move_weight=0):
 
-    ptas = get_ptas(pulsars, vary_white_noise=vary_white_noise, include_equad_ecorr=include_equad_ecorr, wn_backend_selection=wn_backend_selection, noisedict_file=noisedict_file, include_rn=include_rn, vary_rn=vary_rn, include_gwb=include_gwb, max_n_source=max_n_source, efac_start=efac_start, rn_amp_prior=rn_amp_prior, rn_log_amp_range=rn_log_amp_range, rn_params=rn_params, gwb_amp_prior=gwb_amp_prior, gwb_log_amp_range=gwb_log_amp_range, n_comp_gwb=n_comp_gwb, cw_amp_prior=cw_amp_prior, cw_log_amp_range=cw_log_amp_range, cw_f_range=cw_f_range, include_psr_term=include_psr_term, prior_recovery=prior_recovery)
+    ptas = get_ptas(pulsars, vary_white_noise=vary_white_noise, include_equad_ecorr=include_equad_ecorr, wn_backend_selection=wn_backend_selection, noisedict_file=noisedict_file, include_rn=include_rn, include_per_psr_rn=include_per_psr_rn, vary_rn=vary_rn, include_gwb=include_gwb, max_n_source=max_n_source, efac_start=efac_start, rn_amp_prior=rn_amp_prior, rn_log_amp_range=rn_log_amp_range, rn_params=rn_params, gwb_amp_prior=gwb_amp_prior, gwb_log_amp_range=gwb_log_amp_range, n_comp_gwb=n_comp_gwb, cw_amp_prior=cw_amp_prior, cw_log_amp_range=cw_log_amp_range, cw_f_range=cw_f_range, include_psr_term=include_psr_term, prior_recovery=prior_recovery)
 
     print(ptas)
     for i in range(max_n_source+1):
@@ -1725,7 +1725,7 @@ def get_match_matrix(pta, params_list, noise_param_dict=None):
 #
 ################################################################################
 
-def get_ptas(pulsars, vary_white_noise=True, include_equad_ecorr=False, wn_backend_selection=False, noisedict_file=None, include_rn=True, vary_rn=True, include_gwb=True, max_n_source=1, efac_start=1.0, rn_amp_prior='uniform', rn_log_amp_range=[-18,-11], rn_params=[-13.0,1.0], gwb_amp_prior='uniform', gwb_log_amp_range=[-18,-11], n_comp_gwb=30, cw_amp_prior='uniform', cw_log_amp_range=[-18,-11], cw_f_range=[3.5e-9,1e-7], include_psr_term=False, prior_recovery=False):
+def get_ptas(pulsars, vary_white_noise=True, include_equad_ecorr=False, wn_backend_selection=False, noisedict_file=None, include_rn=True, include_per_psr_rn=False, vary_rn=True, include_gwb=True, max_n_source=1, efac_start=1.0, rn_amp_prior='uniform', rn_log_amp_range=[-18,-11], rn_params=[-13.0,1.0], gwb_amp_prior='uniform', gwb_log_amp_range=[-18,-11], n_comp_gwb=30, cw_amp_prior='uniform', cw_log_amp_range=[-18,-11], cw_f_range=[3.5e-9,1e-7], include_psr_term=False, prior_recovery=False):
     #setting up base model
     if vary_white_noise:
         efac = parameter.Uniform(0.01, 10.0)
@@ -1754,6 +1754,18 @@ def get_ptas(pulsars, vary_white_noise=True, include_equad_ecorr=False, wn_backe
     base_model = ef + tm
     if include_equad_ecorr:
         base_model = base_model + eq + ec
+
+    if include_per_psr_rn:
+        tmin = [p.toas.min() for p in pulsars]
+        tmax = [p.toas.max() for p in pulsars]
+        Tspan = np.max(tmax) - np.min(tmin)
+
+        log10_A = parameter.Constant()
+        gamma = parameter.Constant()
+        pl = utils.powerlaw(log10_A=log10_A, gamma=gamma)
+        per_psr_rn = gp_signals.FourierBasisGP(pl, components=30, Tspan=Tspan)
+        
+        base_model = base_model + per_psr_rn
     
     #adding red noise if included
     if include_rn:
