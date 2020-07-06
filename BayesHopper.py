@@ -31,7 +31,7 @@ def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, n_source_prior='flat'
                regular_weight=3, noise_jump_weight=3, PT_swap_weight=1, T_ladder = None,
                Fe_proposal_weight=0, fe_file=None, Fe_pdet=0.5, Fe_alpha=0.1, draw_from_prior_weight=0,
                de_weight=0, prior_recovery=False, cw_amp_prior='uniform', gwb_amp_prior='uniform', rn_amp_prior='uniform',
-               gwb_log_amp_range=[-18,-11], n_comp_gwb=30, rn_log_amp_range=[-18,-11], cw_log_amp_range=[-18,-11], cw_f_range=[3.5e-9,1e-7],
+               gwb_log_amp_range=[-18,-11], n_comp_common=30, n_comp_per_psr_rn=30, rn_log_amp_range=[-18,-11], cw_log_amp_range=[-18,-11], cw_f_range=[3.5e-9,1e-7],
                vary_white_noise=False, efac_start=1.0,
                include_gwb=False, gwb_switch_weight=0, include_psr_term=False,
                include_rn=False, include_per_psr_rn=False, vary_rn=False, rn_params=[-13.0,1.0], rn_on_prior=0.5, rn_switch_weight=0, jupyter_notebook=False,
@@ -39,7 +39,7 @@ def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, n_source_prior='flat'
                save_every_n=10000, savefile=None,
                rn_gwb_move_weight=0):
 
-    ptas = get_ptas(pulsars, vary_white_noise=vary_white_noise, include_equad_ecorr=include_equad_ecorr, wn_backend_selection=wn_backend_selection, noisedict_file=noisedict_file, include_rn=include_rn, include_per_psr_rn=include_per_psr_rn, vary_rn=vary_rn, include_gwb=include_gwb, max_n_source=max_n_source, efac_start=efac_start, rn_amp_prior=rn_amp_prior, rn_log_amp_range=rn_log_amp_range, rn_params=rn_params, gwb_amp_prior=gwb_amp_prior, gwb_log_amp_range=gwb_log_amp_range, n_comp_gwb=n_comp_gwb, cw_amp_prior=cw_amp_prior, cw_log_amp_range=cw_log_amp_range, cw_f_range=cw_f_range, include_psr_term=include_psr_term, prior_recovery=prior_recovery)
+    ptas = get_ptas(pulsars, vary_white_noise=vary_white_noise, include_equad_ecorr=include_equad_ecorr, wn_backend_selection=wn_backend_selection, noisedict_file=noisedict_file, include_rn=include_rn, include_per_psr_rn=include_per_psr_rn, vary_rn=vary_rn, include_gwb=include_gwb, max_n_source=max_n_source, efac_start=efac_start, rn_amp_prior=rn_amp_prior, rn_log_amp_range=rn_log_amp_range, rn_params=rn_params, gwb_amp_prior=gwb_amp_prior, gwb_log_amp_range=gwb_log_amp_range, n_comp_common=n_comp_common, n_comp_per_psr_rn=n_comp_per_psr_rn, cw_amp_prior=cw_amp_prior, cw_log_amp_range=cw_log_amp_range, cw_f_range=cw_f_range, include_psr_term=include_psr_term, prior_recovery=prior_recovery)
 
     print(ptas)
     for i in range(max_n_source+1):
@@ -1725,7 +1725,7 @@ def get_match_matrix(pta, params_list, noise_param_dict=None):
 #
 ################################################################################
 
-def get_ptas(pulsars, vary_white_noise=True, include_equad_ecorr=False, wn_backend_selection=False, noisedict_file=None, include_rn=True, include_per_psr_rn=False, vary_rn=True, include_gwb=True, max_n_source=1, efac_start=1.0, rn_amp_prior='uniform', rn_log_amp_range=[-18,-11], rn_params=[-13.0,1.0], gwb_amp_prior='uniform', gwb_log_amp_range=[-18,-11], n_comp_gwb=30, cw_amp_prior='uniform', cw_log_amp_range=[-18,-11], cw_f_range=[3.5e-9,1e-7], include_psr_term=False, prior_recovery=False):
+def get_ptas(pulsars, vary_white_noise=True, include_equad_ecorr=False, wn_backend_selection=False, noisedict_file=None, include_rn=True, include_per_psr_rn=False, vary_rn=True, include_gwb=True, max_n_source=1, efac_start=1.0, rn_amp_prior='uniform', rn_log_amp_range=[-18,-11], rn_params=[-13.0,1.0], gwb_amp_prior='uniform', gwb_log_amp_range=[-18,-11], n_comp_common=30, n_comp_per_psr_rn=30, cw_amp_prior='uniform', cw_log_amp_range=[-18,-11], cw_f_range=[3.5e-9,1e-7], include_psr_term=False, prior_recovery=False):
     #setting up base model
     if vary_white_noise:
         efac = parameter.Uniform(0.01, 10.0)
@@ -1763,7 +1763,7 @@ def get_ptas(pulsars, vary_white_noise=True, include_equad_ecorr=False, wn_backe
         log10_A = parameter.Constant()
         gamma = parameter.Constant()
         pl = utils.powerlaw(log10_A=log10_A, gamma=gamma)
-        per_psr_rn = gp_signals.FourierBasisGP(pl, components=30, Tspan=Tspan)
+        per_psr_rn = gp_signals.FourierBasisGP(pl, components=n_comp_per_psr_rn, Tspan=Tspan)
         
         base_model = base_model + per_psr_rn
     
@@ -1783,13 +1783,13 @@ def get_ptas(pulsars, vary_white_noise=True, include_equad_ecorr=False, wn_backe
             gam_name = 'com_rn_gamma'
             gamma_rn = parameter.Uniform(0, 7)(gam_name)
             pl = utils.powerlaw(log10_A=log10_Arn, gamma=gamma_rn)
-            rn = gp_signals.FourierBasisGP(spectrum=pl, coefficients=False, components=30, Tspan=Tspan,
+            rn = gp_signals.FourierBasisGP(spectrum=pl, coefficients=False, components=n_comp_common, Tspan=Tspan,
                                            modes=None, name='com_rn')
         else:
             log10_A = parameter.Constant(rn_params[0])
             gamma = parameter.Constant(rn_params[1])
             pl = utils.powerlaw(log10_A=log10_A, gamma=gamma)
-            rn = gp_signals.FourierBasisGP(spectrum=pl, components=30, Tspan=Tspan)
+            rn = gp_signals.FourierBasisGP(spectrum=pl, components=n_comp_common, Tspan=Tspan)
         
         #base_model += rn 
 
@@ -1811,7 +1811,7 @@ def get_ptas(pulsars, vary_white_noise=True, include_equad_ecorr=False, wn_backe
 
         cpl = utils.powerlaw(log10_A=log10_Agw, gamma=gamma_gw)
         gwb = gp_signals.FourierBasisCommonGP(cpl, utils.hd_orf(), coefficients=False,
-                                              components=n_comp_gwb, Tspan=Tspan,
+                                              components=n_comp_common, Tspan=Tspan,
                                               modes=None, name='gw')
 
         #base_model_gwb = base_model + gwb
