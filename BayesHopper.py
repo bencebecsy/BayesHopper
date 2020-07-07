@@ -171,6 +171,7 @@ def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, n_source_prior='flat'
         for j in range(n_chain):
             per_psr_eigvec = get_fisher_eigenvectors(np.delete(samples[j,0,1:], range(n_source*7,max_n_source*7)), ptas[n_source][0][0], T_chain=Ts[j], n_source=1, dim=2*len(pulsars), offset=n_source*7)
             eig_per_psr[j,:,:] = per_psr_eigvec[0,:,:]
+            #if j==0: print(eig_per_psr[0,:,:])
     elif vary_per_psr_rn and vary_white_noise: #vary both per psr RN and WN
         eig_per_psr = np.broadcast_to(np.eye(3*len(pulsars))*0.1, (n_chain,3*len(pulsars), 3*len(pulsars)) ).copy()
         #calculate wn eigenvectors
@@ -1235,8 +1236,8 @@ def regular_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, eig, 
         #    new_point[n_source*7+len(ptas[n_source][gwb_on][1].pulsars):n_source*7+len(ptas[n_source][gwb_on][1].pulsars)+2] = np.hstack(p.sample() for p in ptas[n_source][gwb_on][1].params[n_source*7+len(ptas[n_source][gwb_on][1].pulsars):n_source*7+num_noise_params])
         #    if j==0: print(new_point)
 
-        if j==0:
-            print(new_point)
+        #if j==0:
+        #    print(new_point)
         log_acc_ratio = ptas[n_source][gwb_on][rn_on].get_lnlikelihood(new_point)/Ts[j]
         log_acc_ratio += ptas[n_source][gwb_on][rn_on].get_lnprior(new_point)
         log_acc_ratio += -ptas[n_source][gwb_on][rn_on].get_lnlikelihood(samples_current)/Ts[j]
@@ -1275,11 +1276,14 @@ def noise_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, eig_per
         
         #do the wn jump
         jump_select = np.random.randint(eig_per_psr.shape[1])
-        #print(jump_select)
+        #if j==0:
+        #    print(eig_per_psr.shape[1])
+        #    print(jump_select)
         jump_wn = eig_per_psr[j,jump_select,:]
-        jump = np.array([jump_wn[int(i-n_source*7)] if i>=n_source*7 and i<n_source*7+len(ptas[n_source][gwb_on][1].pulsars) else 0.0 for i in range(samples_current.size)])
+        jump = np.array([jump_wn[int(i-n_source*7)] if i>=n_source*7 and i<n_source*7+eig_per_psr.shape[1] else 0.0 for i in range(samples_current.size)])
         #if j==0: print('noise')
-        #if j==0: print(jump)
+        #if j==0:
+        #    print(jump)
 
         new_point = samples_current + jump*np.random.normal()
 
