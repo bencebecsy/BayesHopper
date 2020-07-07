@@ -266,7 +266,7 @@ Draw from prior: {3:.2f}%\nDifferential evolution jump: {4:.2f}%\nNoise jump: {9
           de_probability*100, RJ_probability*100, gwb_switch_probability*100, rn_switch_probability*100, rn_gwb_move_probability*100, noise_jump_probability*100))
 
     for i in range(int(N-1)):
-        print(samples[0,i,:])
+        #print(samples[0,i,:])
         #write results to file
         if savefile is not None and i%save_every_n==0 and i!=0:
             np.savez(savefile, samples=samples[:,:i,:], acc_fraction=acc_fraction, swap_record=swap_record)
