@@ -7,19 +7,14 @@ See [arXiv:1912.08807](https://arxiv.org/abs/1912.08807) for details!
 
 Citation:
 ```
-@ARTICLE{2019arXiv191208807B,
-       author = {{B{\'e}csy}, Bence and {Cornish}, Neil J.},
-        title = "{Joint search for isolated sources and an unresolved confusion background in pulsar timing array data}",
-      journal = {arXiv e-prints},
-     keywords = {General Relativity and Quantum Cosmology, Astrophysics - High Energy Astrophysical Phenomena},
-         year = "2019",
-        month = "Dec",
-          eid = {arXiv:1912.08807},
-        pages = {arXiv:1912.08807},
-archivePrefix = {arXiv},
-       eprint = {1912.08807},
- primaryClass = {gr-qc},
-       adsurl = {https://ui.adsabs.harvard.edu/abs/2019arXiv191208807B},
-      adsnote = {Provided by the SAO/NASA Astrophysics Data System}
-}
+@article{Becsy_2020,
+	doi = {10.1088/1361-6382/ab8bbd},
+	url = {https://doi.org/10.1088%2F1361-6382%2Fab8bbd},
+	year = 2020,
+	month = {apr},
+	publisher = {{IOP} Publishing},
+	author = {Bence B{\'{e}}csy and Neil J Cornish},
+	title = {Joint search for isolated sources and an unresolved confusion background in pulsar timing array data},
+	journal = {Classical and Quantum Gravity}
+} 
 ```
