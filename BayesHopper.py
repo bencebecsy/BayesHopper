@@ -119,9 +119,9 @@ def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, n_source_prior='flat'
         num_noise_params += 2*len(pulsars)
 
     num_params += num_noise_params
-    print(num_params)
-    print(num_noise_params)
-    print(num_per_psr_params)
+    print("# of parameters: ", num_params)
+    print("# of noise parameters: ", num_noise_params)
+    print("# of per psr parameters: ", num_per_psr_params)
 
     samples = np.zeros((n_chain, N, num_params))
 
@@ -142,12 +142,12 @@ def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, n_source_prior='flat'
             samples[j,0,max_n_source*7+1:max_n_source*7+1+len(pulsars)] = np.ones(len(pulsars))*efac_start
         elif vary_per_psr_rn and not vary_white_noise:
             if per_psr_rn_start_file==None:
-                samples[j,0,max_n_source*7+1:max_n_source*7+1+2*len(pulsars)] = np.hstack(p.sample() for p in ptas[0][0][0].params[n_source*7:n_source*7+2*len(pulsars)])
+                samples[j,0,max_n_source*7+1:max_n_source*7+1+2*len(pulsars)] = np.hstack(p.sample() for p in ptas[0][0][0].params[:2*len(pulsars)])
             else:
                 RN_noise_data = np.load(per_psr_rn_start_file)
                 samples[j,0,max_n_source*7+1:max_n_source*7+1+2*len(pulsars)] = RN_noise_data['RN_start']
         elif vary_per_psr_rn and vary_white_noise: #vary both per psr RN and WN
-            samples[j,0,max_n_source*7+1:max_n_source*7+1+3*len(pulsars)] = np.hstack(p.sample() for p in ptas[0][0][0].params[n_source*7:n_source*7+3*len(pulsars)])
+            samples[j,0,max_n_source*7+1:max_n_source*7+1+3*len(pulsars)] = np.hstack(p.sample() for p in ptas[0][0][0].params[:3*len(pulsars)])
         if vary_rn:
             if vary_rn_gamma:
                 samples[j,0,max_n_source*7+1+num_per_psr_params:max_n_source*7+1+num_noise_params] = np.array([ptas[n_source][0][1].params[n_source*7+num_per_psr_params].sample(), ptas[n_source][0][1].params[n_source*7+num_per_psr_params+1].sample()])
@@ -275,22 +275,18 @@ def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, n_source_prior='flat'
 
     #set up probabilities of different proposals
     total_weight = (regular_weight + PT_swap_weight + Fe_proposal_weight + 
-                    draw_from_prior_weight + de_weight + RJ_weight + gwb_switch_weight + noise_jump_weight + rn_switch_weight + rn_gwb_move_weight)
+                    RJ_weight + gwb_switch_weight + noise_jump_weight + rn_switch_weight + rn_gwb_move_weight)
     swap_probability = PT_swap_weight/total_weight
     fe_proposal_probability = Fe_proposal_weight/total_weight
     regular_probability = regular_weight/total_weight
-    draw_from_prior_probability = draw_from_prior_weight/total_weight
-    de_probability = de_weight/total_weight
     RJ_probability = RJ_weight/total_weight
     gwb_switch_probability = gwb_switch_weight/total_weight
     rn_switch_probability = rn_switch_weight/total_weight
     noise_jump_probability = noise_jump_weight/total_weight
     rn_gwb_move_probability = rn_gwb_move_weight/total_weight
     print("Percentage of steps doing different jumps:\nPT swaps: {0:.2f}%\nRJ moves: {5:.2f}%\nGWB-switches: {6:.2f}%\nRN-switches: {7:.2f}%\nRN-GWB moves: {8:.2f}%\n\
-Fe-proposals: {1:.2f}%\nJumps along Fisher eigendirections: {2:.2f}%\n\
-Draw from prior: {3:.2f}%\nDifferential evolution jump: {4:.2f}%\nNoise jump: {9:.2f}%".format(swap_probability*100,
-          fe_proposal_probability*100, regular_probability*100, draw_from_prior_probability*100,
-          de_probability*100, RJ_probability*100, gwb_switch_probability*100, rn_switch_probability*100, rn_gwb_move_probability*100, noise_jump_probability*100))
+Fe-proposals: {1:.2f}%\nJumps along Fisher eigendirections: {2:.2f}%\nNoise jump: {9:.2f}%".format(swap_probability*100, fe_proposal_probability*100, regular_probability*100,
+          RJ_probability*100, gwb_switch_probability*100, rn_switch_probability*100, rn_gwb_move_probability*100, noise_jump_probability*100))
 
     for i in range(int(N-1)):
         #print(samples[0,i,:])
@@ -364,32 +360,20 @@ Draw from prior: {3:.2f}%\nDifferential evolution jump: {4:.2f}%\nNoise jump: {9
             #global proposal based on Fe-statistic
             elif jump_decide<swap_probability+fe_proposal_probability:
                 do_fe_global_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, freqs, fe, inc_max, psi_max, phase0_max, h_max, vary_white_noise, include_gwb, num_noise_params, num_per_psr_params, Fe_pdet, Fe_alpha, psi_pdf, cos_inc_pdf, phase0_pdf, log_h_pdf)
-            #draw from prior move
-            elif jump_decide<swap_probability+fe_proposal_probability+draw_from_prior_probability:
-                do_draw_from_prior_move(n_chain, n_source, pta, samples, i, Ts, a_yes, a_no)
-            #do DE jump
-            elif (jump_decide<swap_probability+fe_proposal_probability+
-                 draw_from_prior_probability+de_probability and i>=de_start_iter):
-                do_de_jump(n_chain, ndim, pta, samples, i, Ts, a_yes, a_no, de_history)
             #do RJ move
-            elif (jump_decide<swap_probability+fe_proposal_probability+
-                 draw_from_prior_probability+de_probability+RJ_probability):
+            elif (jump_decide<swap_probability+fe_proposal_probability+RJ_probability):
                 do_rj_move(n_chain, max_n_source, n_source_prior, ptas, samples, i, Ts, a_yes, a_no, freqs, fe, inc_max, psi_max, phase0_max, h_max, rj_record, vary_white_noise, include_gwb, num_noise_params, num_per_psr_params)
             #do GWB switch move
-            elif (jump_decide<swap_probability+fe_proposal_probability+
-                 draw_from_prior_probability+de_probability+RJ_probability+gwb_switch_probability):
+            elif (jump_decide<swap_probability+fe_proposal_probability+RJ_probability+gwb_switch_probability):
                 gwb_switch_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, vary_white_noise, include_gwb, num_noise_params, num_per_psr_params, gwb_on_prior, gwb_log_amp_range, vary_gwb_gamma)
             #do noise jump
-            elif (jump_decide<swap_probability+fe_proposal_probability+
-                 draw_from_prior_probability+de_probability+RJ_probability+gwb_switch_probability+noise_jump_probability):
+            elif (jump_decide<swap_probability+fe_proposal_probability+RJ_probability+gwb_switch_probability+noise_jump_probability):
                 noise_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, eig_per_psr, include_gwb, num_noise_params, num_per_psr_params, vary_white_noise)
             #do RN switch move
-            elif (jump_decide<swap_probability+fe_proposal_probability+
-                    draw_from_prior_probability+de_probability+RJ_probability+gwb_switch_probability+noise_jump_probability+rn_switch_probability):
+            elif (jump_decide<swap_probability+fe_proposal_probability+RJ_probability+gwb_switch_probability+noise_jump_probability+rn_switch_probability):
                 rn_switch_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, vary_white_noise, include_rn, num_noise_params, num_per_psr_params, rn_on_prior, rn_log_amp_range, vary_rn_gamma)
             #do RN-GWB move
-            elif (jump_decide<swap_probability+fe_proposal_probability+
-                    draw_from_prior_probability+de_probability+RJ_probability+gwb_switch_probability+noise_jump_probability+rn_switch_probability+rn_gwb_move_probability):
+            elif (jump_decide<swap_probability+fe_proposal_probability+RJ_probability+gwb_switch_probability+noise_jump_probability+rn_switch_probability+rn_gwb_move_probability):
                 rn_gwb_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, vary_white_noise, include_rn, include_gwb, num_noise_params, num_per_psr_params, rn_on_prior, rn_log_amp_range, gwb_on_prior, gwb_log_amp_range, vary_rn_gamma, vary_gwb_gamma)
             #regular step
             else:
@@ -1023,81 +1007,6 @@ def do_rj_move(n_chain, max_n_source, n_source_prior, ptas, samples, i, Ts, a_ye
             else:
                 samples[j,i+1,:] = samples[j,i,:]
                 a_no[0,j] += 1
-
-################################################################################
-#
-#DIFFERENTIAL EVOLUTION PROPOSAL ----------------- OUT OF USE
-#
-################################################################################
-
-def do_de_jump(n_chain, n_source, pta, samples, i, Ts, a_yes, a_no, de_history):
-    de_indices = np.random.choice(de_history.shape[1], size=2, replace=False)
-
-    ndim = 7*n_source
-
-    #setting up our two x arrays and replace them with a random draw if the
-    #have not been filled up yet with history
-    x1 = de_history[:,de_indices[0],:]
-    if np.array_equal(x1, np.zeros((n_chain, ndim))):
-        for j in range(n_chain):
-            x1[j,:] = np.hstack(p.sample() for p in pta.params)
-    
-    x2 = de_history[:,de_indices[1],:]
-    if np.array_equal(x2, np.zeros((n_chain, ndim))):
-        for j in range(n_chain):
-            x2[j,:] = np.hstack(p.sample() for p in pta.params)
-
-    alpha = 1.0
-    if np.random.uniform()<0.9:
-        alpha = np.random.normal(scale=2.38/np.sqrt(2*ndim))
-
-    for j in range(n_chain):
-        new_point = samples[j,i,:] + alpha*(x1[j,:]-x2[j,:])
-        
-        log_acc_ratio = pta.get_lnlikelihood(new_point[:])/Ts[j]
-        log_acc_ratio += pta.get_lnprior(new_point[:])
-        log_acc_ratio += -pta.get_lnlikelihood(samples[j,i,:])/Ts[j]
-        log_acc_ratio += -pta.get_lnprior(samples[j,i,:])
-
-        acc_ratio = np.exp(log_acc_ratio)
-        if np.random.uniform()<=acc_ratio:
-            for k in range(ndim):
-                samples[j,i+1,k] = new_point[k]
-            a_yes[j+2]+=1
-        else:
-            for k in range(ndim):
-                samples[j,i+1,k] = samples[j,i,k]
-            a_no[j+2]+=1
-
-
-################################################################################
-#
-#DRAW FROM PRIOR MOVE ------------ OUT OF USE
-#
-################################################################################
-
-def do_draw_from_prior_move(n_chain, n_source, pta, samples, i, Ts, a_yes, a_no):
-    ndim = n_source*7
-    for j in range(n_chain):
-        #make a rendom draw from the prior
-        new_point = np.hstack(p.sample() for p in pta.params)
-
-        #calculate acceptance ratio
-        log_acc_ratio = pta.get_lnlikelihood(new_point[:])/Ts[j]
-        log_acc_ratio += pta.get_lnprior(new_point[:])
-        log_acc_ratio += -pta.get_lnlikelihood(samples[j,i,1:])/Ts[j]
-        log_acc_ratio += -pta.get_lnprior(samples[j,i,1:])
-        
-        acc_ratio = np.exp(log_acc_ratio)
-        samples[j,i+1,0] = n_source
-        if np.random.uniform()<=acc_ratio:
-            for k in range(ndim):
-                samples[j,i+1,k+1] = new_point[k]
-            a_yes[j+2]+=1
-        else:
-            for k in range(ndim):
-                samples[j,i+1,k+1] = samples[j,i,k+1]
-            a_no[j+2]+=1
 
 ################################################################################
 #
