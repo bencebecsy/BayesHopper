@@ -76,12 +76,13 @@ def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1,
                     cw_log_amp_range=cw_log_amp_range, cw_f_range=cw_f_range,
                     include_psr_term=include_psr_term,
                     prior_recovery=prior_recovery)
+    
+    print(ptas)
 
     print("In Fe-proposal we will use p_det={0} and alpha={1}".format(Fe_pdet, Fe_alpha))
 
     #do n_global_first global proposal steps before starting any other step
     n_global_first = 0
-
     #fisher updating every n_fish_update step
     n_fish_update = 200 #50
     #print out status every n_status_update step
@@ -117,42 +118,14 @@ def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1,
             n_source_prior *= 1.0/n_prior_norm
         print("Prior on number of sources: ", n_source_prior)
 
-    #calculating parameter numbers
-    num_params = max_n_source*7+3
-    if include_gwb:
-        if vary_gwb_gamma:
-            num_params += 2
-        else:
-            num_params += 1
-
-    num_per_psr_params = 0
-    num_noise_params = 0
-    if vary_white_noise:
-        num_per_psr_params += len(pulsars)
-        num_noise_params += len(pulsars)
-    if vary_rn:
-        if vary_rn_gamma:
-            num_noise_params += 2
-        else:
-            num_noise_params += 1
-    if vary_per_psr_rn:
-        num_per_psr_params += 2*len(pulsars)
-        num_noise_params += 2*len(pulsars)
-
-    num_params += num_noise_params
-    print("# of parameters: ", num_params)
-    print("# of noise parameters: ", num_noise_params)
-    print("# of per psr parameters: ", num_per_psr_params)
-
-
-    #making helper objects with parameter names and indices
-    param_names = ['n_source', 'gwb_on', 'rn_on']
+    #making a list of parameter names
+    param_names = ['n_source', 'n_gwb', 'n_rn']
     for p_name in ptas[-1][-1][-1].param_names:
         param_names.append(p_name)
 
     print(param_names)
 
-    print(ptas)
+    #for each pta in ptas make parameter mask and parameter index dictionary
     p_mask = []
     pimap = []
     for i in range(max_n_source+1):
@@ -179,6 +152,30 @@ def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1,
 
     #print(pimap)
     print(p_mask)
+    
+    #calculating number of parameters
+    num_params = len(param_names)
+    print("# of parameters (including n_source, gwb_on, rn_on): ", num_params)
+    
+    #calculating number of cw parameters
+    cw_par_idxs = [i for i, p in enumerate(param_names) if "cw_" in p]
+    cw_num_params = len(cw_par_idxs)
+    print("# of cw parameters: ", cw_num_params)
+
+    #calculating number of common process parameters
+    common_par_idxs = [i for i, p in enumerate(param_names)
+                        if "gwb_" in p or "rn_com" in p]
+    common_num_params = len(common_par_idxs)
+    print("# of common (GWB or cRN) parameters: ", common_num_params)
+
+    #calculating number of per psr parameters
+    per_psr_par_idxs = [i for i, p in enumerate(param_names)
+                        if "gwb_" not in p
+                        and "rn_com_" not in p
+                        and "cw_" not in p
+                        and "n_" not in p]
+    per_psr_num_params = len(per_psr_par_idxs)
+    print("# of per psr parameters: ", per_psr_num_params)
 
     #set up array for samples
     samples = np.zeros((n_chain, N, num_params))
@@ -202,66 +199,38 @@ def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1,
         #fill up samles with draw from priors
         samples[j,0,p_mask[n_source][gwb_on][rn_on]] = np.hstack(p.sample() for p in ptas[n_source][gwb_on][rn_on].params)
         #TODO: implement using per psr RN start file
-
-    print(samples[0,0,:])
-    print(ptas[n_source][0][0].get_lnlikelihood(np.delete(samples[0,0,1:], range(n_source*7,max_n_source*7))))
+        
+        if j==0:
+            print(samples[0,0,:])
+            print(ptas[n_source][gwb_on][rn_on].get_lnlikelihood(samples[0,0,p_mask[n_source][gwb_on][rn_on]]))
 
     #setting up array for the fisher eigenvalues
     #one for cw parameters which we will keep updating
-    eig = np.ones((n_chain, max_n_source, 7, 7))*0.1
+    eig = np.broadcast_to(np.eye(int(cw_num_params/max_n_source))*0.1,
+                          (n_chain,
+                           max_n_source,
+                           int(cw_num_params/max_n_source),
+                           int(cw_num_params/max_n_source)) ).copy()
+    print(eig[0,1,:,:])
 
     #one for GWB and common rn parameters, which we will keep updating
-    if include_gwb:
-        if vary_gwb_gamma and vary_rn_gamma:
-            eig_gwb_rn = np.broadcast_to(np.array([[1.0,0,0,0], [0,0.3,0,0], [0,0,1.0,0], [0,0,0,0.3]]),
-                                         (n_chain, 4, 4)).copy()
-        elif not vary_gwb_gamma and vary_rn_gamma:
-            eig_gwb_rn = np.broadcast_to(np.array([[1.0,0,0], [0,0.3,0], [0,0,0.3]]),
-                                         (n_chain, 3, 3)).copy()
-        elif vary_gwb_gamma and not vary_rn_gamma:
-            eig_gwb_rn = np.broadcast_to(np.array([[0.3,0,0], [0,1.0,0], [0,0,0.3]]),
-                                         (n_chain, 3, 3)).copy()
-        else:
-            eig_gwb_rn = np.broadcast_to(np.array([[0.3,0], [0,0.3]]),
-                                         (n_chain, 2, 2)).copy()
-    else:
-        if vary_rn_gamma:
-            eig_gwb_rn = np.broadcast_to(np.array([[1.0,0], [0,0.3]]),
-                                         (n_chain, 2, 2)).copy()
-        else:
-            eig_gwb_rn = np.broadcast_to(np.array([[0.3,],]),
-                                         (n_chain, 1, 1)).copy()
-
+    eig_gwb_rn = np.broadcast_to(np.eye(common_num_params)*0.5,
+                          (n_chain,
+                           common_num_params,
+                           common_num_params) ).copy()
     print(eig_gwb_rn[0,:,:])
+    
     #and one for per psr noise (WN and RN) parameters, which we will not update
-    if vary_white_noise and not vary_per_psr_rn:
-        eig_per_psr = np.broadcast_to(np.eye(len(pulsars))*0.1,
-                                      (n_chain,len(pulsars), len(pulsars)) ).copy()
-        #calculate wn eigenvectors
-        for j in range(n_chain):
-            per_psr_eigvec = get_fisher_eigenvectors(np.delete(samples[j,0,1:], range(n_source*7,max_n_source*7)),
-                                                     ptas[n_source][0][0], T_chain=Ts[j],
-                                                     n_source=1, dim=len(pulsars), offset=n_source*7)
-            eig_per_psr[j,:,:] = per_psr_eigvec[0,:,:]
-    elif vary_per_psr_rn and not vary_white_noise:
-        eig_per_psr = np.broadcast_to(np.eye(2*len(pulsars))*0.1,
-                                      (n_chain,2*len(pulsars), 2*len(pulsars)) ).copy()
-        #calculate wn eigenvectors
-        for j in range(n_chain):
-            per_psr_eigvec = get_fisher_eigenvectors(np.delete(samples[j,0,1:], range(n_source*7,max_n_source*7)),
-                                                     ptas[n_source][0][0], T_chain=Ts[j],
-                                                     n_source=1, dim=2*len(pulsars), offset=n_source*7)
-            eig_per_psr[j,:,:] = per_psr_eigvec[0,:,:]
-            #if j==0: print(eig_per_psr[0,:,:])
-    elif vary_per_psr_rn and vary_white_noise: #vary both per psr RN and WN
-        eig_per_psr = np.broadcast_to(np.eye(3*len(pulsars))*0.1,
-                                      (n_chain,3*len(pulsars), 3*len(pulsars)) ).copy()
-        #calculate wn eigenvectors
-        for j in range(n_chain):
-            per_psr_eigvec = get_fisher_eigenvectors(np.delete(samples[j,0,1:], range(n_source*7,max_n_source*7)),
-                                                     ptas[n_source][0][0], T_chain=Ts[j],
-                                                     n_source=1, dim=3*len(pulsars), offset=n_source*7)
-            eig_per_psr[j,:,:] = per_psr_eigvec[0,:,:]
+    eig_per_psr = np.broadcast_to(np.eye(per_psr_num_params)*0.1,
+                                  (n_chain,
+                                   per_psr_num_params,
+                                   per_psr_num_params) ).copy()
+    for j in range(n_chain):
+        per_psr_eigvec = get_fisher_eigenvectors(samples[j,0,p_mask[0][0][0]],
+                                                     ptas[0][0][0], T_chain=Ts[j],
+                                                     n_source=1, dim=per_psr_num_params)
+        eig_per_psr[j,:,:] = per_psr_eigvec[0,:,:]
+    print(eig_per_psr[0,:,:])
 
     #setting up arrays to record acceptance and swaps
     #columns: chain number
@@ -350,10 +319,10 @@ def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1,
     noise_jump_probability = noise_jump_weight/total_weight
     rn_gwb_move_probability = rn_gwb_move_weight/total_weight
     print("Percentage of steps doing different jumps:\nPT swaps: {0:.2f}%\n\
-          RJ moves: {3:.2f}%\nGWB-switches: {4:.2f}%\nRN-switches: {5:.2f}%\n\
-          RN-GWB moves: {6:.2f}%\nFe-proposals: {1:.2f}%\n\
-          Jumps along Fisher eigendirections: {2:.2f}%\n\
-          Noise jump: {7:.2f}%".format(swap_probability*100, fe_proposal_probability*100,
+RJ moves: {3:.2f}%\nGWB-switches: {4:.2f}%\nRN-switches: {5:.2f}%\n\
+RN-GWB moves: {6:.2f}%\nFe-proposals: {1:.2f}%\n\
+Jumps along Fisher eigendirections: {2:.2f}%\n\
+Noise jump: {7:.2f}%".format(swap_probability*100, fe_proposal_probability*100,
                                        regular_probability*100, RJ_probability*100,
                                        gwb_switch_probability*100,
                                        rn_switch_probability*100,
@@ -2046,12 +2015,12 @@ def get_ptas(pulsars, vary_white_noise=True, include_equad_ecorr=False,
 
         if vary_rn:
             #rn = ext_models.common_red_noise_block(prior='uniform', Tspan=Tspan, name='com_rn')
-            amp_name = 'com_rn_log10_A'
+            amp_name = 'rn_com_log10_A'
             if rn_amp_prior == 'uniform':
                 log10_Arn = parameter.LinearExp(rn_log_amp_range[0], rn_log_amp_range[1])(amp_name)
             elif rn_amp_prior == 'log-uniform':
                 log10_Arn = parameter.Uniform(rn_log_amp_range[0], rn_log_amp_range[1])(amp_name)
-            gam_name = 'com_rn_gamma'
+            gam_name = 'rn_com_gamma'
             if vary_rn_gamma:
                 gamma_rn = parameter.Uniform(0, 7)(gam_name)
             else:
@@ -2060,7 +2029,7 @@ def get_ptas(pulsars, vary_white_noise=True, include_equad_ecorr=False,
             pl = utils.powerlaw(log10_A=log10_Arn, gamma=gamma_rn)
             rn = gp_signals.FourierBasisGP(spectrum=pl, coefficients=False,
                                            components=n_comp_common, Tspan=Tspan,
-                                           modes=None, name='com_rn')
+                                           modes=None, name='rn_com')
         else:
             log10_A = parameter.Constant(rn_params[0])
             gamma = parameter.Constant(rn_params[1])
@@ -2075,13 +2044,13 @@ def get_ptas(pulsars, vary_white_noise=True, include_equad_ecorr=False,
         tmin = [p.toas.min() for p in pulsars]
         tmax = [p.toas.max() for p in pulsars]
         Tspan = np.max(tmax) - np.min(tmin)
-        amp_name = 'gw_log10_A'
+        amp_name = 'gwb_log10_A'
         if gwb_amp_prior == 'uniform':
             log10_Agw = parameter.LinearExp(gwb_log_amp_range[0], gwb_log_amp_range[1])(amp_name)
         elif gwb_amp_prior == 'log-uniform':
             log10_Agw = parameter.Uniform(gwb_log_amp_range[0], gwb_log_amp_range[1])(amp_name)
 
-        gam_name = 'gw_gamma'
+        gam_name = 'gwb_gamma'
         if vary_gwb_gamma:
             gamma_gw = parameter.Uniform(0, 7)(gam_name)
         else:
@@ -2091,7 +2060,7 @@ def get_ptas(pulsars, vary_white_noise=True, include_equad_ecorr=False,
         cpl = utils.powerlaw(log10_A=log10_Agw, gamma=gamma_gw)
         gwb = gp_signals.FourierBasisCommonGP(cpl, utils.hd_orf(), coefficients=False,
                                               components=n_comp_common, Tspan=Tspan,
-                                              modes=None, name='gw')
+                                              modes=None, name='gwb')
 
         #base_model_gwb = base_model + gwb
 
@@ -2099,19 +2068,19 @@ def get_ptas(pulsars, vary_white_noise=True, include_equad_ecorr=False,
     cws = []
     for i in range(max_n_source):
         log10_fgw = parameter.Uniform(np.log10(cw_f_range[0]),
-                                      np.log10(cw_f_range[1]))(str(i)+'_'+'log10_fgw')
-        log10_mc = parameter.Constant(np.log10(5e9))(str(i)+'_'+'log10_mc')
-        cos_gwtheta = parameter.Uniform(-1, 1)(str(i)+'_'+'cos_gwtheta')
-        gwphi = parameter.Uniform(0, 2*np.pi)(str(i)+'_'+'gwphi')
-        phase0 = parameter.Uniform(0, 2*np.pi)(str(i)+'_'+'phase0')
-        psi = parameter.Uniform(0, np.pi)(str(i)+'_'+'psi')
-        cos_inc = parameter.Uniform(-1, 1)(str(i)+'_'+'cos_inc')
+                                      np.log10(cw_f_range[1]))("cw_"+str(i)+'_log10_fgw')
+        log10_mc = parameter.Constant(np.log10(5e9))("cw_"+str(i)+'_log10_mc')
+        cos_gwtheta = parameter.Uniform(-1, 1)("cw_"+str(i)+'_cos_gwtheta')
+        gwphi = parameter.Uniform(0, 2*np.pi)("cw_"+str(i)+'_gwphi')
+        phase0 = parameter.Uniform(0, 2*np.pi)("cw_"+str(i)+'_phase0')
+        psi = parameter.Uniform(0, np.pi)("cw_"+str(i)+'_psi')
+        cos_inc = parameter.Uniform(-1, 1)("cw_"+str(i)+'_cos_inc')
         if cw_amp_prior == 'log-uniform':
             log10_h = parameter.Uniform(cw_log_amp_range[0],
-                                        cw_log_amp_range[1])(str(i)+'_'+'log10_h')
+                                        cw_log_amp_range[1])("cw_"+str(i)+'_log10_h')
         elif cw_amp_prior == 'uniform':
             log10_h = parameter.LinearExp(cw_log_amp_range[0],
-                                          cw_log_amp_range[1])(str(i)+'_'+'log10_h')
+                                          cw_log_amp_range[1])("cw_"+str(i)+'_log10_h')
         else:
             print("CW amplitude prior of {0} not available".format(cw_amp_prior))
         cw_wf = deterministic.cw_delay(cos_gwtheta=cos_gwtheta, gwphi=gwphi, log10_mc=log10_mc,
