@@ -284,8 +284,8 @@ def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, n_source_prior='flat'
     rn_switch_probability = rn_switch_weight/total_weight
     noise_jump_probability = noise_jump_weight/total_weight
     rn_gwb_move_probability = rn_gwb_move_weight/total_weight
-    print("Percentage of steps doing different jumps:\nPT swaps: {0:.2f}%\nRJ moves: {5:.2f}%\nGWB-switches: {6:.2f}%\nRN-switches: {7:.2f}%\nRN-GWB moves: {8:.2f}%\n\
-Fe-proposals: {1:.2f}%\nJumps along Fisher eigendirections: {2:.2f}%\nNoise jump: {9:.2f}%".format(swap_probability*100, fe_proposal_probability*100, regular_probability*100,
+    print("Percentage of steps doing different jumps:\nPT swaps: {0:.2f}%\nRJ moves: {3:.2f}%\nGWB-switches: {4:.2f}%\nRN-switches: {5:.2f}%\nRN-GWB moves: {6:.2f}%\n\
+Fe-proposals: {1:.2f}%\nJumps along Fisher eigendirections: {2:.2f}%\nNoise jump: {7:.2f}%".format(swap_probability*100, fe_proposal_probability*100, regular_probability*100,
           RJ_probability*100, gwb_switch_probability*100, rn_switch_probability*100, rn_gwb_move_probability*100, noise_jump_probability*100))
 
     for i in range(int(N-1)):
@@ -293,10 +293,6 @@ Fe-proposals: {1:.2f}%\nJumps along Fisher eigendirections: {2:.2f}%\nNoise jump
         #write results to file
         if savefile is not None and i%save_every_n==0 and i!=0:
             np.savez(savefile, samples=samples[:,:i,:], acc_fraction=acc_fraction, swap_record=swap_record)
-        #add current sample to DE history
-        if i%n_de_history==0 and i>=de_start_iter and de_probability!=0:
-            de_hist_index = int((i-de_start_iter)/n_de_history)%history_size
-            de_history[:,de_hist_index,:] = samples[:,i,:]
         #print out run state every 10 iterations
         if i%n_status_update==0:
             acc_fraction = a_yes/(a_no+a_yes)
