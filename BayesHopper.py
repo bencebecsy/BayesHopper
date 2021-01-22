@@ -37,7 +37,7 @@ def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, n_source_prior='flat'
                vary_white_noise=False, efac_start=1.0,
                include_gwb=False, gwb_switch_weight=0, include_psr_term=False,
                include_rn=False, include_per_psr_rn=False, vary_rn=False, vary_per_psr_rn=False, rn_params=[-13.0,1.0], per_psr_rn_start_file=None, rn_on_prior=0.5, rn_switch_weight=0, jupyter_notebook=False,
-               gwb_on_prior=0.5, include_equad_ecorr=False, wn_backend_selection=False, noisedict_file=None,
+               gwb_on_prior=0.5, rn_gwb_on_prior=None, include_equad_ecorr=False, wn_backend_selection=False, noisedict_file=None,
                save_every_n=10000, savefile=None,
                rn_gwb_move_weight=0):
 
@@ -81,10 +81,23 @@ def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, n_source_prior='flat'
     de_history = np.zeros((n_chain, history_size, max_n_source*7+1))
     #start DE after de_start_iter iterations
     de_start_iter = 100
-       
-    #printitng out the prior used on GWB on/off
-    if include_gwb:
-        print("Prior on GWB on/off: {0}%".format(gwb_on_prior*100))
+    
+
+    #GWB and RN on/off priors
+    if include_gwb and include_rn and rn_gwb_on_prior is None:
+        rn_gwb_on_prior = np.array([[(1-rn_on_prior)*(1-gwb_on_prior), rn_on_prior*(1-gwb_on_prior)],
+                                    [(1-rn_on_prior)*gwb_on_prior, rn_on_prior*gwb_on_prior]])
+    else:
+        rn_gwb_on_prior = np.array(rn_gwb_on_prior)
+        rn_gwb_on_prior = rn_gwb_on_prior/np.sum(rn_gwb_on_prior)
+
+    #printitng out the prior used on GWB and RN on/off
+    if include_gwb and include_rn:
+        print("Prior for GWB and RN both off: {0}%".format(rn_gwb_on_prior[0,0]*100))
+        print("Prior for GWB and RN both on: {0}%".format(rn_gwb_on_prior[1,1]*100))
+        print("Prior for GWB on and RN off: {0}%".format(rn_gwb_on_prior[1,0]*100))
+        print("Prior for GWB off and RN on: {0}%".format(rn_gwb_on_prior[0,1]*100))
+        print(rn_gwb_on_prior)
 
     #set up and print out prior on number of sources
     if max_n_source!=0:
@@ -361,16 +374,16 @@ Fe-proposals: {1:.2f}%\nJumps along Fisher eigendirections: {2:.2f}%\nNoise jump
                 do_rj_move(n_chain, max_n_source, n_source_prior, ptas, samples, i, Ts, a_yes, a_no, freqs, fe, inc_max, psi_max, phase0_max, h_max, rj_record, vary_white_noise, include_gwb, num_noise_params, num_per_psr_params)
             #do GWB switch move
             elif (jump_decide<swap_probability+fe_proposal_probability+RJ_probability+gwb_switch_probability):
-                gwb_switch_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, vary_white_noise, include_gwb, num_noise_params, num_per_psr_params, gwb_on_prior, gwb_log_amp_range, vary_gwb_gamma)
+                gwb_switch_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, vary_white_noise, include_gwb, num_noise_params, num_per_psr_params, rn_gwb_on_prior, gwb_log_amp_range, vary_gwb_gamma)
             #do noise jump
             elif (jump_decide<swap_probability+fe_proposal_probability+RJ_probability+gwb_switch_probability+noise_jump_probability):
                 noise_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, eig_per_psr, include_gwb, num_noise_params, num_per_psr_params, vary_white_noise)
             #do RN switch move
             elif (jump_decide<swap_probability+fe_proposal_probability+RJ_probability+gwb_switch_probability+noise_jump_probability+rn_switch_probability):
-                rn_switch_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, vary_white_noise, include_rn, num_noise_params, num_per_psr_params, rn_on_prior, rn_log_amp_range, vary_rn_gamma)
+                rn_switch_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, vary_white_noise, include_rn, num_noise_params, num_per_psr_params, rn_gwb_on_prior, rn_log_amp_range, vary_rn_gamma)
             #do RN-GWB move
             elif (jump_decide<swap_probability+fe_proposal_probability+RJ_probability+gwb_switch_probability+noise_jump_probability+rn_switch_probability+rn_gwb_move_probability):
-                rn_gwb_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, vary_white_noise, include_rn, include_gwb, num_noise_params, num_per_psr_params, rn_on_prior, rn_log_amp_range, gwb_on_prior, gwb_log_amp_range, vary_rn_gamma, vary_gwb_gamma)
+                rn_gwb_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, vary_white_noise, include_rn, include_gwb, num_noise_params, num_per_psr_params, rn_gwb_on_prior, rn_log_amp_range, gwb_log_amp_range, vary_rn_gamma, vary_gwb_gamma)
             #regular step
             else:
                 regular_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, eig, eig_gwb_rn, include_gwb, num_noise_params, num_per_psr_params, vary_rn, vary_rn_gamma, vary_gwb_gamma)
@@ -383,7 +396,7 @@ Fe-proposals: {1:.2f}%\nJumps along Fisher eigendirections: {2:.2f}%\nNoise jump
 #RN - GWB MOVE (EXCHANGE IF ONE IS ON, MIXING IF BOTH IS ON)
 #
 ################################################################################
-def rn_gwb_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, vary_white_noise, include_rn, include_gwb, num_noise_params, num_per_psr_params, rn_on_prior, rn_log_amp_range, gwb_on_prior, gwb_log_amp_range, vary_rn_gamma, vary_gwb_gamma):
+def rn_gwb_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, vary_white_noise, include_rn, include_gwb, num_noise_params, num_per_psr_params, rn_gwb_on_prior, rn_log_amp_range, gwb_log_amp_range, vary_rn_gamma, vary_gwb_gamma):
     if not include_rn or not include_gwb:
        raise Exception("Both include_rn and include_gwb must be True to use this move")
     for j in range(n_chain):
@@ -486,8 +499,9 @@ def rn_gwb_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, vary_w
                 acc_ratio *= gamma_proposal_old
 
             #apply prior
-            acc_ratio *= (1-gwb_on_prior)/gwb_on_prior
-            acc_ratio *= rn_on_prior/(1-rn_on_prior)
+            #acc_ratio *= (1-gwb_on_prior)/gwb_on_prior
+            #acc_ratio *= rn_on_prior/(1-rn_on_prior)
+            acc_ratio *= rn_gwb_on_prior[0,1]/rn_gwb_on_prior[1,0]
 
             #if j==0: print(acc_ratio)
 
@@ -547,8 +561,9 @@ def rn_gwb_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, vary_w
                 acc_ratio *= gamma_proposal_old
 
             #apply priors
-            acc_ratio *= (1-rn_on_prior)/rn_on_prior
-            acc_ratio *= gwb_on_prior/(1-gwb_on_prior)
+            #acc_ratio *= (1-rn_on_prior)/rn_on_prior
+            #acc_ratio *= gwb_on_prior/(1-gwb_on_prior)
+            acc_ratio *= rn_gwb_on_prior[1,0]/rn_gwb_on_prior[0,1]
 
             #if j==0: print(acc_ratio)
 
@@ -571,7 +586,7 @@ def rn_gwb_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, vary_w
 #RN SWITCH (ON/OFF) MOVE
 #
 ################################################################################
-def rn_switch_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, vary_white_noise, include_rn, num_noise_params, num_per_psr_params, rn_on_prior, rn_log_amp_range, vary_rn_gamma):
+def rn_switch_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, vary_white_noise, include_rn, num_noise_params, num_per_psr_params, rn_gwb_on_prior, rn_log_amp_range, vary_rn_gamma):
     if not include_rn:
        raise Exception("include_rn must be True to use this move")
     for j in range(n_chain):
@@ -634,7 +649,9 @@ def rn_switch_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, var
             #    print(acc_ratio)
             
             #apply on/off prior
-            acc_ratio *= (1-rn_on_prior)/rn_on_prior
+            #acc_ratio *= (1-rn_on_prior)/rn_on_prior
+            acc_ratio *= rn_gwb_on_prior[gwb_on,0]/rn_gwb_on_prior[gwb_on,1]
+
             #if j==0: print(acc_ratio)
             if np.random.uniform()<=acc_ratio:
                 #if j==0: print('wooooow')
@@ -703,7 +720,8 @@ def rn_switch_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, var
             #    print(acc_ratio)
             
             #apply on/off prior
-            acc_ratio *= rn_on_prior/(1-rn_on_prior)
+            #acc_ratio *= rn_on_prior/(1-rn_on_prior)
+            acc_ratio *= rn_gwb_on_prior[gwb_on,1]/rn_gwb_on_prior[gwb_on,0]
             #if j==0: print(acc_ratio)
             if np.random.uniform()<=acc_ratio:
                 #if j==0: print('yeeee')
@@ -724,7 +742,7 @@ def rn_switch_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, var
 #GWB SWITCH (ON/OFF) MOVE
 #
 ################################################################################
-def gwb_switch_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, vary_white_noise, include_gwb, num_noise_params, num_per_psr_params, gwb_on_prior, gwb_log_amp_range, vary_gwb_gamma):
+def gwb_switch_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, vary_white_noise, include_gwb, num_noise_params, num_per_psr_params, rn_gwb_on_prior, gwb_log_amp_range, vary_gwb_gamma):
     if not include_gwb:
        raise Exception("include_gwb must be True to use this move")
     for j in range(n_chain):
@@ -777,7 +795,8 @@ def gwb_switch_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, va
                 acc_ratio *= gamma_proposal_old
 
             #apply on/off prior
-            acc_ratio *= (1-gwb_on_prior)/gwb_on_prior
+            #acc_ratio *= (1-gwb_on_prior)/gwb_on_prior
+            acc_ratio *= rn_gwb_on_prior[0,rn_on]/rn_gwb_on_prior[1,rn_on]
             #if j==0: print(acc_ratio)
             if np.random.uniform()<=acc_ratio:
                 #if j==0: print('wooooow')
@@ -834,7 +853,8 @@ def gwb_switch_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, va
                 acc_ratio *= 1/gamma_proposal_new
 
             #apply on/off prior
-            acc_ratio *= gwb_on_prior/(1-gwb_on_prior)
+            #acc_ratio *= gwb_on_prior/(1-gwb_on_prior)
+            acc_ratio *= rn_gwb_on_prior[1,rn_on]/rn_gwb_on_prior[0,rn_on]
             #if j==0: print(acc_ratio)
             if np.random.uniform()<=acc_ratio:
                 #if j==0: print('yeeee')
