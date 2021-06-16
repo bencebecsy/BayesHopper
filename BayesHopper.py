@@ -215,12 +215,14 @@ def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, n_source_prior='flat'
         eig_per_psr = np.broadcast_to(np.eye(len(pulsars))*0.1, (n_chain,len(pulsars), len(pulsars)) ).copy()
         #calculate wn eigenvectors
         for j in range(n_chain):
+            n_source = get_n_source(samples,j,0)
             per_psr_eigvec = get_fisher_eigenvectors(np.delete(samples[j,0,1:], range(n_source*7,max_n_source*7)), ptas[n_source][0][0], T_chain=Ts[j], n_source=1, dim=len(pulsars), offset=n_source*7)
             eig_per_psr[j,:,:] = per_psr_eigvec[0,:,:]
     elif vary_per_psr_rn and not vary_white_noise:
         eig_per_psr = np.broadcast_to(np.eye(2*len(pulsars))*0.1, (n_chain,2*len(pulsars), 2*len(pulsars)) ).copy()
         #calculate wn eigenvectors
         for j in range(n_chain):
+            n_source = get_n_source(samples,j,0)
             per_psr_eigvec = get_fisher_eigenvectors(np.delete(samples[j,0,1:], range(n_source*7,max_n_source*7)), ptas[n_source][0][0], T_chain=Ts[j], n_source=1, dim=2*len(pulsars), offset=n_source*7)
             eig_per_psr[j,:,:] = per_psr_eigvec[0,:,:]
             #if j==0: print(eig_per_psr[0,:,:])
@@ -228,6 +230,7 @@ def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, n_source_prior='flat'
         eig_per_psr = np.broadcast_to(np.eye(3*len(pulsars))*0.1, (n_chain,3*len(pulsars), 3*len(pulsars)) ).copy()
         #calculate wn eigenvectors
         for j in range(n_chain):
+            n_source = get_n_source(samples,j,0)
             per_psr_eigvec = get_fisher_eigenvectors(np.delete(samples[j,0,1:], range(n_source*7,max_n_source*7)), ptas[n_source][0][0], T_chain=Ts[j], n_source=1, dim=3*len(pulsars), offset=n_source*7)
             eig_per_psr[j,:,:] = per_psr_eigvec[0,:,:]
 
@@ -342,9 +345,9 @@ Fe-proposals: {1:.2f}%\nJumps along Fisher eigendirections: {2:.2f}%\nNoise jump
             #only update T>1 chains every 10th time
             if i%(n_fish_update*10)==0:
                 for j in range(n_chain):
-                    n_source = int(np.copy(samples[j,i,0]))
+                    n_source = get_n_source(samples,j,i)
                     if include_gwb:
-                        gwb_on = int(samples[j,i,max_n_source*7+1+num_noise_params]!=0.0)
+                        gwb_on = get_gwb_on(samples,j,i,max_n_source,num_noise_params)
                     else:
                         gwb_on = 0
                     #GWB-RN eigenvectors
@@ -370,9 +373,9 @@ Fe-proposals: {1:.2f}%\nJumps along Fisher eigendirections: {2:.2f}%\nNoise jump
                         if np.all(eigenvectors):
                             eig[j,:n_source,:,:] = eigenvectors
             elif samples[0,i,0]!=0:
-                n_source = int(np.copy(samples[0,i,0]))
+                n_source = get_n_source(samples,0,i)
                 if include_gwb:
-                    gwb_on = int(samples[0,i,max_n_source*7+1+num_noise_params]!=0.0)
+                    gwb_on = get_gwb_on(samples,0,i,max_n_source,num_noise_params)
                 else:
                     gwb_on = 0
                 eigenvectors = get_fisher_eigenvectors(np.delete(samples[0,i,1:], range(n_source*7,max_n_source*7)), ptas[n_source][gwb_on][1], T_chain=Ts[0], n_source=n_source)
@@ -422,9 +425,9 @@ def rn_gwb_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, vary_w
     if not include_rn or not include_gwb:
        raise Exception("Both include_rn and include_gwb must be True to use this move")
     for j in range(n_chain):
-        n_source = int(np.copy(samples[j,i,0]))
-        gwb_on = int(samples[j,i,max_n_source*7+1+num_noise_params]!=0.0)
-        rn_on = int(samples[j,i,max_n_source*7+1+num_per_psr_params]!=0.0)
+        n_source = get_n_source(samples,j,i)
+        gwb_on = get_gwb_on(samples,j,i,max_n_source,num_noise_params)
+        rn_on = get_rn_on(samples,j,i,max_n_source,num_per_psr_params)
 
         #no gwb or rn on -- nothing to vary
         if gwb_on==0 and rn_on==0:
@@ -612,9 +615,9 @@ def rn_switch_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, var
     if not include_rn:
        raise Exception("include_rn must be True to use this move")
     for j in range(n_chain):
-        n_source = int(np.copy(samples[j,i,0]))
-        gwb_on = int(samples[j,i,max_n_source*7+1+num_noise_params]!=0.0)
-        rn_on = int(samples[j,i,max_n_source*7+1+num_per_psr_params]!=0.0)
+        n_source = get_n_source(samples,j,i)
+        gwb_on = get_gwb_on(samples,j,i,max_n_source,num_noise_params)
+        rn_on = get_rn_on(samples,j,i,max_n_source,num_per_psr_params)
         
         #turning off ---------------------------------------------------------------------------------------------------------
         if rn_on==1:
@@ -768,9 +771,9 @@ def gwb_switch_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, va
     if not include_gwb:
        raise Exception("include_gwb must be True to use this move")
     for j in range(n_chain):
-        n_source = int(np.copy(samples[j,i,0]))
-        gwb_on = int(samples[j,i,max_n_source*7+1+num_noise_params]!=0.0)
-        rn_on = int(samples[j,i,max_n_source*7+1+num_per_psr_params]!=0.0)
+        n_source = get_n_source(samples,j,i)
+        gwb_on = get_gwb_on(samples,j,i,max_n_source,num_noise_params)
+        rn_on = get_rn_on(samples,j,i,max_n_source,num_per_psr_params)
         
         #turning off ---------------------------------------------------------------------------------------------------------
         if gwb_on==1:
@@ -895,14 +898,14 @@ def gwb_switch_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, va
 ################################################################################
 def do_rj_move(n_chain, max_n_source, n_source_prior, ptas, samples, i, Ts, a_yes, a_no, freqs, fe, inc_max, psi_max, phase0_max, h_max, rj_record, vary_white_noise, include_gwb, num_noise_params, num_per_psr_params):
     for j in range(n_chain):
-        n_source = int(np.copy(samples[j,i,0]))
+        n_source = get_n_source(samples,j,i)
 
         if include_gwb:
-            gwb_on = int(samples[j,i,max_n_source*7+1+num_noise_params]!=0.0)
+            gwb_on = get_gwb_on(samples,j,i,max_n_source,num_noise_params)
         else:
             gwb_on = 0
 
-        rn_on = int(samples[j,i,max_n_source*7+1+num_per_psr_params]!=0.0)
+        rn_on = get_rn_on(samples,j,i,max_n_source,num_per_psr_params)
         
         add_prob = 0.5 #flat prior on n_source-->same propability of addind and removing
         #decide if we add or remove a signal
@@ -1073,7 +1076,7 @@ def do_fe_global_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, 
     
     for j in range(n_chain):
         #check if there's any source -- stay at given point of not
-        n_source = int(np.copy(samples[j,i,0]))
+        n_source = get_n_source(samples,j,i)
         if n_source==0:
             samples[j,i+1,:] = samples[j,i,:]
             a_no[5,j]+=1
@@ -1081,11 +1084,11 @@ def do_fe_global_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, 
             continue
 
         if include_gwb:
-            gwb_on = int(samples[j,i,max_n_source*7+1+num_noise_params]!=0.0)
+            gwb_on = get_gwb_on(samples,j,i,max_n_source,num_noise_params)
         else:
             gwb_on = 0
 
-        rn_on = int(samples[j,i,max_n_source*7+1+num_per_psr_params]!=0.0)
+        rn_on = get_rn_on(samples,j,i,max_n_source,num_per_psr_params)
 
         log_f_max = float(ptas[n_source][gwb_on][1].params[3]._typename.split('=')[2][:-1])
         log_f_min = float(ptas[n_source][gwb_on][1].params[3]._typename.split('=')[1].split(',')[0])
@@ -1239,14 +1242,14 @@ def do_fe_global_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, 
 
 def regular_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, eig, eig_gwb_rn, include_gwb, num_noise_params, num_per_psr_params, vary_rn, vary_rn_gamma, vary_gwb_gamma):
     for j in range(n_chain):
-        n_source = int(np.copy(samples[j,i,0]))
+        n_source = get_n_source(samples,j,i)
 
         if include_gwb:
-            gwb_on = int(samples[j,i,max_n_source*7+1+num_noise_params]!=0.0)
+            gwb_on = get_gwb_on(samples,j,i,max_n_source,num_noise_params)
         else:
             gwb_on = 0
 
-        rn_on = int(samples[j,i,max_n_source*7+1+num_per_psr_params]!=0.0)
+        rn_on = get_rn_on(samples,j,i,max_n_source,num_per_psr_params)
 
         samples_current = np.delete(samples[j,i,1:], range(n_source*7,max_n_source*7))
         
@@ -1337,14 +1340,14 @@ def regular_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, eig, 
 
 def noise_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, eig_per_psr, include_gwb, num_noise_params, num_per_psr_params, vary_white_noise):
     for j in range(n_chain):
-        n_source = int(np.copy(samples[j,i,0]))
+        n_source = get_n_source(samples,j,i)
 
         if include_gwb:
-            gwb_on = int(samples[j,i,max_n_source*7+1+num_noise_params]!=0.0)
+            gwb_on = get_gwb_on(samples,j,i,max_n_source,num_noise_params)
         else:
             gwb_on = 0
 
-        rn_on = int(samples[j,i,max_n_source*7+1+num_per_psr_params]!=0.0)
+        rn_on = get_rn_on(samples,j,i,max_n_source,num_per_psr_params)
 
         samples_current = np.delete(samples[j,i,1:], range(n_source*7,max_n_source*7))
         
@@ -1387,18 +1390,18 @@ def noise_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, eig_per
 def do_pt_swap(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, swap_record, vary_white_noise, include_gwb, num_noise_params, num_per_psr_params):
     swap_chain = np.random.randint(n_chain-1)
 
-    n_source1 = int(np.copy(samples[swap_chain,i,0]))
-    n_source2 = int(np.copy(samples[swap_chain+1,i,0]))
+    n_source1 = get_n_source(samples,swap_chain,i)
+    n_source2 = get_n_source(samples,swap_chain+1,i)
 
     if include_gwb:
-        gwb_on1 = int(samples[swap_chain,i,max_n_source*7+1+num_noise_params]!=0.0)
-        gwb_on2 = int(samples[swap_chain+1,i,max_n_source*7+1+num_noise_params]!=0.0)
+        gwb_on1 = get_gwb_on(samples,swap_chain,i,max_n_source,num_noise_params)
+        gwb_on2 = get_gwb_on(samples,swap_chain+1,i,max_n_source,num_noise_params)
     else:
         gwb_on1 = 0
         gwb_on2 = 0
 
-    rn_on1 = int(samples[swap_chain,i,max_n_source*7+1+num_per_psr_params]!=0.0)
-    rn_on2 = int(samples[swap_chain+1,i,max_n_source*7+1+num_per_psr_params]!=0.0)
+    rn_on1 = get_rn_on(samples,swap_chain,i,max_n_source,num_per_psr_params)
+    rn_on2 = get_rn_on(samples,swap_chain+1,i,max_n_source,num_per_psr_params)
     
     samples_current1 = np.delete(samples[swap_chain,i,1:], range(n_source1*7,max_n_source*7))
     samples_current2 = np.delete(samples[swap_chain+1,i,1:], range(n_source2*7,max_n_source*7)) 
@@ -1995,4 +1998,19 @@ def get_ptas(pulsars, vary_white_noise=True, include_equad_ecorr=False, wn_backe
         ptas.append(gwb_sub_ptas)
 
     return ptas
+
+################################################################################
+#
+#SOME HELPER FUNCTIONS
+#
+################################################################################
+
+def get_gwb_on(samples, j, i, max_n_source, num_noise_params):
+    return int(samples[j,i,max_n_source*7+1+num_noise_params]!=0.0)
+
+def get_rn_on(samples, j, i, max_n_source, num_per_psr_params):
+    return int(samples[j,i,max_n_source*7+1+num_per_psr_params]!=0.0)
+
+def get_n_source(samples, j, i):
+    return int(samples[j,i,0])
 
