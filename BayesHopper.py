@@ -38,7 +38,7 @@ def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, n_source_prior='flat'
                include_gwb=False, gwb_switch_weight=0, include_psr_term=False,
                include_rn=False, include_per_psr_rn=False, vary_rn=False, vary_per_psr_rn=False, rn_params=[-13.0,1.0], per_psr_rn_start_file=None, rn_on_prior=0.5, rn_switch_weight=0, jupyter_notebook=False,
                gwb_on_prior=0.5, rn_gwb_on_prior=None, include_equad_ecorr=False, wn_backend_selection=False, noisedict_file=None,
-               save_every_n=10000, savefile=None,
+               save_every_n=10000, savefile=None, resume_from=None,
                rn_gwb_move_weight=0):
 
     ptas = get_ptas(pulsars, vary_white_noise=vary_white_noise, include_equad_ecorr=include_equad_ecorr, wn_backend_selection=wn_backend_selection, noisedict_file=noisedict_file, include_rn=include_rn, include_per_psr_rn=include_per_psr_rn, vary_rn=vary_rn, vary_per_psr_rn=vary_per_psr_rn, include_gwb=include_gwb, max_n_source=max_n_source, efac_start=efac_start, rn_amp_prior=rn_amp_prior, rn_log_amp_range=rn_log_amp_range, per_psr_rn_amp_prior=per_psr_rn_amp_prior, per_psr_rn_log_amp_range=per_psr_rn_log_amp_range, rn_params=rn_params, gwb_amp_prior=gwb_amp_prior, gwb_log_amp_range=gwb_log_amp_range, n_comp_common=n_comp_common, n_comp_per_psr_rn=n_comp_per_psr_rn, vary_gwb_gamma=vary_gwb_gamma, vary_rn_gamma=vary_rn_gamma, cw_amp_prior=cw_amp_prior, cw_log_amp_range=cw_log_amp_range, cw_f_range=cw_f_range, include_psr_term=include_psr_term, prior_recovery=prior_recovery)
@@ -136,45 +136,58 @@ def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, n_source_prior='flat'
     print("# of noise parameters: ", num_noise_params)
     print("# of per psr parameters: ", num_per_psr_params)
 
-    samples = np.zeros((n_chain, N, num_params))
 
-    #filling first sample with random draw
-    for j in range(n_chain):
-        if n_source_start is 'random':
-            n_source = np.random.choice(max_n_source+1)
-        else:
-            n_source = n_source_start
-        samples[j,0,0] = n_source
-        #print(samples[0,0,:])
-        print(n_source)
-        if n_source!=0:
-            samples[j,0,1:n_source*7+1] = np.hstack(p.sample() for p in ptas[n_source][0][0].params[:n_source*7])
-        #not needed, because zeros are already there: samples[j,0,n_source*7+1:max_n_source*7+1] = np.zeros((max_n_source-n_source)*7)
-        #print(samples[0,0,:])
-        if vary_white_noise and not vary_per_psr_rn:
-            samples[j,0,max_n_source*7+1:max_n_source*7+1+len(pulsars)] = np.ones(len(pulsars))*efac_start
-        elif vary_per_psr_rn and not vary_white_noise:
-            if per_psr_rn_start_file==None:
-                samples[j,0,max_n_source*7+1:max_n_source*7+1+2*len(pulsars)] = np.hstack(p.sample() for p in ptas[0][0][0].params[:2*len(pulsars)])
-            else:
-                RN_noise_data = np.load(per_psr_rn_start_file)
-                samples[j,0,max_n_source*7+1:max_n_source*7+1+2*len(pulsars)] = RN_noise_data['RN_start']
-        elif vary_per_psr_rn and vary_white_noise: #vary both per psr RN and WN
-            samples[j,0,max_n_source*7+1:max_n_source*7+1+3*len(pulsars)] = np.hstack(p.sample() for p in ptas[0][0][0].params[:3*len(pulsars)])
-        if vary_rn:
-            if vary_rn_gamma:
-                samples[j,0,max_n_source*7+1+num_per_psr_params:max_n_source*7+1+num_noise_params] = np.array([ptas[n_source][0][1].params[n_source*7+num_per_psr_params].sample(), ptas[n_source][0][1].params[n_source*7+num_per_psr_params+1].sample()])
-            else:
-                samples[j,0,max_n_source*7+1+num_per_psr_params:max_n_source*7+1+num_noise_params] = ptas[n_source][0][1].params[n_source*7+num_per_psr_params].sample()
-        if include_gwb:
-            if vary_gwb_gamma:
-                samples[j,0,max_n_source*7+1+num_noise_params:max_n_source*7+1+num_noise_params+2] = np.array([ptas[n_source][1][1].params[n_source*7+num_noise_params].sample(), ptas[n_source][1][1].params[n_source*7+num_noise_params+1].sample()])
+    if resume_from is not None:
+        print("Resuming from file: " + resume_from)
+        npzfile = np.load(resume_from)
+        swap_record = list(npzfile['swap_record'])
+        samples_resume = npzfile['samples']
+        
+        N_resume = samples_resume.shape[1]
+        print("# of samples sucessfully read in: " + str(N_resume))
 
+        samples = np.zeros((n_chain, N_resume+N, num_params))
+        samples[:,:N_resume,:] = np.copy(samples_resume)
+    else:
+        samples = np.zeros((n_chain, N, num_params))
+
+        #filling first sample with random draw
+        for j in range(n_chain):
+            if n_source_start is 'random':
+                n_source = np.random.choice(max_n_source+1)
             else:
-                samples[j,0,max_n_source*7+1+num_noise_params] = ptas[n_source][1][1].params[n_source*7+num_noise_params].sample()
-            #samples[j,0,max_n_source*7+1+num_noise_params] = 0.0 #start with GWB off
-    print(samples[0,0,:])
-    print(ptas[n_source][0][0].get_lnlikelihood(np.delete(samples[0,0,1:], range(n_source*7,max_n_source*7))))
+                n_source = n_source_start
+            samples[j,0,0] = n_source
+            #print(samples[0,0,:])
+            print(n_source)
+            if n_source!=0:
+                samples[j,0,1:n_source*7+1] = np.hstack(p.sample() for p in ptas[n_source][0][0].params[:n_source*7])
+            #not needed, because zeros are already there: samples[j,0,n_source*7+1:max_n_source*7+1] = np.zeros((max_n_source-n_source)*7)
+            #print(samples[0,0,:])
+            if vary_white_noise and not vary_per_psr_rn:
+                samples[j,0,max_n_source*7+1:max_n_source*7+1+len(pulsars)] = np.ones(len(pulsars))*efac_start
+            elif vary_per_psr_rn and not vary_white_noise:
+                if per_psr_rn_start_file==None:
+                    samples[j,0,max_n_source*7+1:max_n_source*7+1+2*len(pulsars)] = np.hstack(p.sample() for p in ptas[0][0][0].params[:2*len(pulsars)])
+                else:
+                    RN_noise_data = np.load(per_psr_rn_start_file)
+                    samples[j,0,max_n_source*7+1:max_n_source*7+1+2*len(pulsars)] = RN_noise_data['RN_start']
+            elif vary_per_psr_rn and vary_white_noise: #vary both per psr RN and WN
+                samples[j,0,max_n_source*7+1:max_n_source*7+1+3*len(pulsars)] = np.hstack(p.sample() for p in ptas[0][0][0].params[:3*len(pulsars)])
+            if vary_rn:
+                if vary_rn_gamma:
+                    samples[j,0,max_n_source*7+1+num_per_psr_params:max_n_source*7+1+num_noise_params] = np.array([ptas[n_source][0][1].params[n_source*7+num_per_psr_params].sample(), ptas[n_source][0][1].params[n_source*7+num_per_psr_params+1].sample()])
+                else:
+                    samples[j,0,max_n_source*7+1+num_per_psr_params:max_n_source*7+1+num_noise_params] = ptas[n_source][0][1].params[n_source*7+num_per_psr_params].sample()
+            if include_gwb:
+                if vary_gwb_gamma:
+                    samples[j,0,max_n_source*7+1+num_noise_params:max_n_source*7+1+num_noise_params+2] = np.array([ptas[n_source][1][1].params[n_source*7+num_noise_params].sample(), ptas[n_source][1][1].params[n_source*7+num_noise_params+1].sample()])
+
+                else:
+                    samples[j,0,max_n_source*7+1+num_noise_params] = ptas[n_source][1][1].params[n_source*7+num_noise_params].sample()
+                #samples[j,0,max_n_source*7+1+num_noise_params] = 0.0 #start with GWB off
+        print(samples[0,0,:])
+        print(ptas[n_source][0][0].get_lnlikelihood(np.delete(samples[0,0,1:], range(n_source*7,max_n_source*7))))
 
     #setting up array for the fisher eigenvalues
     #one for cw parameters which we will keep updating
@@ -221,7 +234,9 @@ def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, n_source_prior='flat'
     #setting up arrays to record acceptance and swaps
     a_yes=np.zeros((8,n_chain)) #columns: chain number; rows: proposal type (RJ_CW, gwb_switch, rn_switch, rn_gwb, PT, Fe, fisher, noise_jump)
     a_no=np.zeros((8,n_chain))
-    swap_record = []
+    acc_fraction = a_yes/(a_no+a_yes)
+    if resume_from is None:
+        swap_record = []
     rj_record = []
 
     #read in fe data if we will need it
@@ -301,10 +316,17 @@ def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, n_source_prior='flat'
 Fe-proposals: {1:.2f}%\nJumps along Fisher eigendirections: {2:.2f}%\nNoise jump: {7:.2f}%".format(swap_probability*100, fe_proposal_probability*100, regular_probability*100,
           RJ_probability*100, gwb_switch_probability*100, rn_switch_probability*100, rn_gwb_move_probability*100, noise_jump_probability*100))
 
-    for i in range(int(N-1)):
+    if resume_from is None:
+        start_iter = 0
+        stop_iter = N
+    else:
+        start_iter = N_resume-1 #-1 because if only 1 sample is read in that's the same as having a different starting point and start_iter should still be 0
+        stop_iter = N_resume-1+N
+
+    for i in range(int(start_iter), int(stop_iter-1)): #-1 because ith step here produces (i+1)th sample based on ith sample
         #print(samples[0,i,:])
         #write results to file
-        if savefile is not None and i%save_every_n==0 and i!=0:
+        if savefile is not None and i%save_every_n==0 and i!=start_iter:
             np.savez(savefile, samples=samples[:,:i,:], acc_fraction=acc_fraction, swap_record=swap_record)
         #print out run state every 10 iterations
         if i%n_status_update==0:
