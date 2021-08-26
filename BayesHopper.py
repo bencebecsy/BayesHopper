@@ -38,7 +38,7 @@ def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, n_source_prior='flat'
                include_gwb=False, gwb_switch_weight=0, include_psr_term=False,
                include_rn=False, include_per_psr_rn=False, vary_rn=False, vary_per_psr_rn=False, rn_params=[-13.0,1.0], per_psr_rn_start_file=None, rn_on_prior=0.5, rn_switch_weight=0, jupyter_notebook=False,
                gwb_on_prior=0.5, rn_gwb_on_prior=None, include_equad_ecorr=False, wn_backend_selection=False, noisedict_file=None,
-               save_every_n=10000, savefile=None, resume_from=None,
+               save_every_n=10000, savefile=None, resume_from=None, n_status_update = 100,
                rn_gwb_move_weight=0):
 
     ptas = get_ptas(pulsars, vary_white_noise=vary_white_noise, include_equad_ecorr=include_equad_ecorr, wn_backend_selection=wn_backend_selection, noisedict_file=noisedict_file, include_rn=include_rn, include_per_psr_rn=include_per_psr_rn, vary_rn=vary_rn, vary_per_psr_rn=vary_per_psr_rn, include_gwb=include_gwb, max_n_source=max_n_source, efac_start=efac_start, rn_amp_prior=rn_amp_prior, rn_log_amp_range=rn_log_amp_range, per_psr_rn_amp_prior=per_psr_rn_amp_prior, per_psr_rn_log_amp_range=per_psr_rn_log_amp_range, rn_params=rn_params, gwb_amp_prior=gwb_amp_prior, gwb_log_amp_range=gwb_log_amp_range, n_comp_common=n_comp_common, n_comp_per_psr_rn=n_comp_per_psr_rn, vary_gwb_gamma=vary_gwb_gamma, vary_rn_gamma=vary_rn_gamma, cw_amp_prior=cw_amp_prior, cw_log_amp_range=cw_log_amp_range, cw_f_range=cw_f_range, include_psr_term=include_psr_term, prior_recovery=prior_recovery)
@@ -59,8 +59,6 @@ def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, n_source_prior='flat'
     
     #fisher updating every n_fish_update step
     n_fish_update = 200 #50
-    #print out status every n_status_update step
-    n_status_update = 10
     #add current sample to de history file every n_de_history step
     n_de_history = 10
 
