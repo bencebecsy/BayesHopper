@@ -54,9 +54,6 @@ def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, n_source_prior='flat'
 
     print("In Fe-proposal we will use p_det={0} and alpha={1}".format(Fe_pdet, Fe_alpha))
 
-    #do n_global_first global proposal steps before starting any other step
-    n_global_first = 0
-    
     #fisher updating every n_fish_update step
     n_fish_update = 200 #50
 
@@ -330,7 +327,7 @@ Fe-proposals: {1:.2f}%\nJumps along Fisher eigendirections: {2:.2f}%\nNoise jump
                       'Acceptance fraction #columns: chain number; rows: proposal type (RJ_CW, gwb_switch, rn_switch, rn_gwb, PT, Fe, fisher, noise_jump):')
                 print(acc_fraction)      
         #update our eigenvectors from the fisher matrix every n_fish_update iterations
-        if i%n_fish_update==0 and i>=n_global_first:
+        if i%n_fish_update==0:
             #only update T>1 chains every 10th time
             if i%(n_fish_update*10)==0:
                 for j in range(n_chain):
@@ -372,35 +369,33 @@ Fe-proposals: {1:.2f}%\nJumps along Fisher eigendirections: {2:.2f}%\nNoise jump
                 #if not, we just keep the initializes eig full of 0.1 values              
                 if np.all(eigenvectors):
                     eig[0,:n_source,:,:] = eigenvectors
-        if i<n_global_first:
-            do_fe_global_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, fe_file)
+        
+        #draw a random number to decide which jump to do
+        jump_decide = np.random.uniform()
+        #PT swap move
+        if jump_decide<swap_probability:
+            do_pt_swap(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, swap_record, vary_white_noise, include_gwb, num_noise_params, num_per_psr_params)
+        #global proposal based on Fe-statistic
+        elif jump_decide<swap_probability+fe_proposal_probability:
+            do_fe_global_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, freqs, fe, inc_max, psi_max, phase0_max, h_max, vary_white_noise, include_gwb, num_noise_params, num_per_psr_params, Fe_pdet, Fe_alpha, psi_pdf, cos_inc_pdf, phase0_pdf, log_h_pdf)
+        #do RJ move
+        elif (jump_decide<swap_probability+fe_proposal_probability+RJ_probability):
+            do_rj_move(n_chain, max_n_source, n_source_prior, ptas, samples, i, Ts, a_yes, a_no, freqs, fe, inc_max, psi_max, phase0_max, h_max, rj_record, vary_white_noise, include_gwb, num_noise_params, num_per_psr_params)
+        #do GWB switch move
+        elif (jump_decide<swap_probability+fe_proposal_probability+RJ_probability+gwb_switch_probability):
+            gwb_switch_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, vary_white_noise, include_gwb, num_noise_params, num_per_psr_params, rn_gwb_on_prior, gwb_log_amp_range, vary_gwb_gamma)
+        #do noise jump
+        elif (jump_decide<swap_probability+fe_proposal_probability+RJ_probability+gwb_switch_probability+noise_jump_probability):
+            noise_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, eig_per_psr, include_gwb, num_noise_params, num_per_psr_params, vary_white_noise)
+        #do RN switch move
+        elif (jump_decide<swap_probability+fe_proposal_probability+RJ_probability+gwb_switch_probability+noise_jump_probability+rn_switch_probability):
+            rn_switch_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, vary_white_noise, include_rn, num_noise_params, num_per_psr_params, rn_gwb_on_prior, rn_log_amp_range, vary_rn_gamma)
+        #do RN-GWB move
+        elif (jump_decide<swap_probability+fe_proposal_probability+RJ_probability+gwb_switch_probability+noise_jump_probability+rn_switch_probability+rn_gwb_move_probability):
+            rn_gwb_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, vary_white_noise, include_rn, include_gwb, num_noise_params, num_per_psr_params, rn_gwb_on_prior, rn_log_amp_range, gwb_log_amp_range, vary_rn_gamma, vary_gwb_gamma)
+        #regular step
         else:
-            #draw a random number to decide which jump to do
-            jump_decide = np.random.uniform()
-            #PT swap move
-            if jump_decide<swap_probability:
-                do_pt_swap(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, swap_record, vary_white_noise, include_gwb, num_noise_params, num_per_psr_params)
-            #global proposal based on Fe-statistic
-            elif jump_decide<swap_probability+fe_proposal_probability:
-                do_fe_global_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, freqs, fe, inc_max, psi_max, phase0_max, h_max, vary_white_noise, include_gwb, num_noise_params, num_per_psr_params, Fe_pdet, Fe_alpha, psi_pdf, cos_inc_pdf, phase0_pdf, log_h_pdf)
-            #do RJ move
-            elif (jump_decide<swap_probability+fe_proposal_probability+RJ_probability):
-                do_rj_move(n_chain, max_n_source, n_source_prior, ptas, samples, i, Ts, a_yes, a_no, freqs, fe, inc_max, psi_max, phase0_max, h_max, rj_record, vary_white_noise, include_gwb, num_noise_params, num_per_psr_params)
-            #do GWB switch move
-            elif (jump_decide<swap_probability+fe_proposal_probability+RJ_probability+gwb_switch_probability):
-                gwb_switch_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, vary_white_noise, include_gwb, num_noise_params, num_per_psr_params, rn_gwb_on_prior, gwb_log_amp_range, vary_gwb_gamma)
-            #do noise jump
-            elif (jump_decide<swap_probability+fe_proposal_probability+RJ_probability+gwb_switch_probability+noise_jump_probability):
-                noise_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, eig_per_psr, include_gwb, num_noise_params, num_per_psr_params, vary_white_noise)
-            #do RN switch move
-            elif (jump_decide<swap_probability+fe_proposal_probability+RJ_probability+gwb_switch_probability+noise_jump_probability+rn_switch_probability):
-                rn_switch_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, vary_white_noise, include_rn, num_noise_params, num_per_psr_params, rn_gwb_on_prior, rn_log_amp_range, vary_rn_gamma)
-            #do RN-GWB move
-            elif (jump_decide<swap_probability+fe_proposal_probability+RJ_probability+gwb_switch_probability+noise_jump_probability+rn_switch_probability+rn_gwb_move_probability):
-                rn_gwb_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, vary_white_noise, include_rn, include_gwb, num_noise_params, num_per_psr_params, rn_gwb_on_prior, rn_log_amp_range, gwb_log_amp_range, vary_rn_gamma, vary_gwb_gamma)
-            #regular step
-            else:
-                regular_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, eig, eig_gwb_rn, include_gwb, num_noise_params, num_per_psr_params, vary_rn, vary_rn_gamma, vary_gwb_gamma)
+            regular_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, eig, eig_gwb_rn, include_gwb, num_noise_params, num_per_psr_params, vary_rn, vary_rn_gamma, vary_gwb_gamma)
     
     acc_fraction = a_yes/(a_no+a_yes)
     return samples, acc_fraction, swap_record, rj_record
