@@ -128,6 +128,7 @@ def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, n_source_prior='flat'
         print("Resuming from file: " + resume_from)
         npzfile = np.load(resume_from)
         swap_record = list(npzfile['swap_record'])
+        log_likelihood_resume = npzfile['log_likelihood']
         samples_resume = npzfile['samples']
         
         N_resume = samples_resume.shape[1]
@@ -135,8 +136,14 @@ def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, n_source_prior='flat'
 
         samples = np.zeros((n_chain, N_resume+N, num_params))
         samples[:,:N_resume,:] = np.copy(samples_resume)
+
+        log_likelihood = np.zeros((n_chain,N_resume+N))
+        log_likelihood[:,:N_resume] = np.copy(log_likelihood_resume)
     else:
         samples = np.zeros((n_chain, N, num_params))
+
+        #set up log_likelihood array
+        log_likelihood = np.zeros((n_chain,N))
 
         #filling first sample with random draw
         for j in range(n_chain):
@@ -173,8 +180,16 @@ def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, n_source_prior='flat'
                 else:
                     samples[j,0,max_n_source*7+1+num_noise_params] = ptas[n_source][1][1].params[n_source*7+num_noise_params].sample()
                 #samples[j,0,max_n_source*7+1+num_noise_params] = 0.0 #start with GWB off
+        #printing info about initial parameters
         print(samples[0,0,:])
-        print(ptas[n_source][0][0].get_lnlikelihood(np.delete(samples[0,0,1:], range(n_source*7,max_n_source*7))))
+        n_source = get_n_source(samples,0,0)
+        gwb_on = get_gwb_on(samples,0,0,max_n_source,num_noise_params)
+        rn_on = get_rn_on(samples,0,0,max_n_source,num_per_psr_params)
+        first_sample = np.delete(samples[0,0,1:], range(n_source*7,max_n_source*7))
+        print(first_sample)
+        log_likelihood[0,0] = ptas[n_source][gwb_on][rn_on].get_lnlikelihood(first_sample)
+        print(log_likelihood[0,0])
+        print(ptas[n_source][gwb_on][rn_on].get_lnprior(first_sample))
 
     #setting up array for the fisher eigenvalues
     #one for cw parameters which we will keep updating
@@ -317,7 +332,7 @@ Fe-proposals: {1:.2f}%\nJumps along Fisher eigendirections: {2:.2f}%\nNoise jump
         #print(samples[0,i,:])
         #write results to file
         if savefile is not None and i%save_every_n==0 and i!=start_iter:
-            np.savez(savefile, samples=samples[:,:i,:], acc_fraction=acc_fraction, swap_record=swap_record)
+            np.savez(savefile, samples=samples[:,:i,:], acc_fraction=acc_fraction, swap_record=swap_record, log_likelihood=log_likelihood[:,:i])
         #print out run state every 10 iterations
         if i%n_status_update==0:
             acc_fraction = a_yes/(a_no+a_yes)
@@ -375,38 +390,38 @@ Fe-proposals: {1:.2f}%\nJumps along Fisher eigendirections: {2:.2f}%\nNoise jump
         jump_decide = np.random.uniform()
         #PT swap move
         if jump_decide<swap_probability:
-            do_pt_swap(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, swap_record, vary_white_noise, include_gwb, num_noise_params, num_per_psr_params)
+            do_pt_swap(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, swap_record, vary_white_noise, include_gwb, num_noise_params, num_per_psr_params, log_likelihood)
         #global proposal based on Fe-statistic
         elif jump_decide<swap_probability+fe_proposal_probability:
-            do_fe_global_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, freqs, fe, inc_max, psi_max, phase0_max, h_max, vary_white_noise, include_gwb, num_noise_params, num_per_psr_params, Fe_pdet, Fe_alpha, psi_pdf, cos_inc_pdf, phase0_pdf, log_h_pdf)
+            do_fe_global_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, freqs, fe, inc_max, psi_max, phase0_max, h_max, vary_white_noise, include_gwb, num_noise_params, num_per_psr_params, Fe_pdet, Fe_alpha, psi_pdf, cos_inc_pdf, phase0_pdf, log_h_pdf, log_likelihood)
         #do RJ move
         elif (jump_decide<swap_probability+fe_proposal_probability+RJ_probability):
-            do_rj_move(n_chain, max_n_source, n_source_prior, ptas, samples, i, Ts, a_yes, a_no, freqs, fe, inc_max, psi_max, phase0_max, h_max, rj_record, vary_white_noise, include_gwb, num_noise_params, num_per_psr_params)
+            do_rj_move(n_chain, max_n_source, n_source_prior, ptas, samples, i, Ts, a_yes, a_no, freqs, fe, inc_max, psi_max, phase0_max, h_max, rj_record, vary_white_noise, include_gwb, num_noise_params, num_per_psr_params, log_likelihood)
         #do GWB switch move
         elif (jump_decide<swap_probability+fe_proposal_probability+RJ_probability+gwb_switch_probability):
-            gwb_switch_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, vary_white_noise, include_gwb, num_noise_params, num_per_psr_params, rn_gwb_on_prior, gwb_log_amp_range, vary_gwb_gamma)
+            gwb_switch_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, vary_white_noise, include_gwb, num_noise_params, num_per_psr_params, rn_gwb_on_prior, gwb_log_amp_range, vary_gwb_gamma, log_likelihood)
         #do noise jump
         elif (jump_decide<swap_probability+fe_proposal_probability+RJ_probability+gwb_switch_probability+noise_jump_probability):
-            noise_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, eig_per_psr, include_gwb, num_noise_params, num_per_psr_params, vary_white_noise)
+            noise_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, eig_per_psr, include_gwb, num_noise_params, num_per_psr_params, vary_white_noise, log_likelihood)
         #do RN switch move
         elif (jump_decide<swap_probability+fe_proposal_probability+RJ_probability+gwb_switch_probability+noise_jump_probability+rn_switch_probability):
-            rn_switch_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, vary_white_noise, include_rn, num_noise_params, num_per_psr_params, rn_gwb_on_prior, rn_log_amp_range, vary_rn_gamma)
+            rn_switch_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, vary_white_noise, include_rn, num_noise_params, num_per_psr_params, rn_gwb_on_prior, rn_log_amp_range, vary_rn_gamma, log_likelihood)
         #do RN-GWB move
         elif (jump_decide<swap_probability+fe_proposal_probability+RJ_probability+gwb_switch_probability+noise_jump_probability+rn_switch_probability+rn_gwb_move_probability):
-            rn_gwb_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, vary_white_noise, include_rn, include_gwb, num_noise_params, num_per_psr_params, rn_gwb_on_prior, rn_log_amp_range, gwb_log_amp_range, vary_rn_gamma, vary_gwb_gamma)
+            rn_gwb_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, vary_white_noise, include_rn, include_gwb, num_noise_params, num_per_psr_params, rn_gwb_on_prior, rn_log_amp_range, gwb_log_amp_range, vary_rn_gamma, vary_gwb_gamma, log_likelihood)
         #regular step
         else:
-            regular_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, eig, eig_gwb_rn, include_gwb, num_noise_params, num_per_psr_params, vary_rn, vary_rn_gamma, vary_gwb_gamma)
+            regular_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, eig, eig_gwb_rn, include_gwb, num_noise_params, num_per_psr_params, vary_rn, vary_rn_gamma, vary_gwb_gamma, log_likelihood)
     
     acc_fraction = a_yes/(a_no+a_yes)
-    return samples, acc_fraction, swap_record, rj_record
+    return samples, acc_fraction, swap_record, rj_record, log_likelihood
 
 ################################################################################
 #
 #RN - GWB MOVE (EXCHANGE IF ONE IS ON, MIXING IF BOTH IS ON)
 #
 ################################################################################
-def rn_gwb_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, vary_white_noise, include_rn, include_gwb, num_noise_params, num_per_psr_params, rn_gwb_on_prior, rn_log_amp_range, gwb_log_amp_range, vary_rn_gamma, vary_gwb_gamma):
+def rn_gwb_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, vary_white_noise, include_rn, include_gwb, num_noise_params, num_per_psr_params, rn_gwb_on_prior, rn_log_amp_range, gwb_log_amp_range, vary_rn_gamma, vary_gwb_gamma, log_likelihood):
     if not include_rn or not include_gwb:
        raise Exception("Both include_rn and include_gwb must be True to use this move")
     for j in range(n_chain):
@@ -418,6 +433,7 @@ def rn_gwb_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, vary_w
         if gwb_on==0 and rn_on==0:
             samples[j,i+1,:] = samples[j,i,:]
             a_no[3,j] += 1
+            log_likelihood[j,i+1] = log_likelihood[j,i]
             #print("Nothing to vary!")
         #Both are on -- miximng move
         elif gwb_on==1 and rn_on==1:
@@ -442,7 +458,8 @@ def rn_gwb_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, vary_w
             new_point[n_source*7+num_noise_params] = new_gwb_log_amp #gwb
             new_point[n_source*7+num_per_psr_params] = new_rn_log_amp #rn
     
-            log_acc_ratio = ptas[n_source][1][1].get_lnlikelihood(new_point)/Ts[j]
+            log_L = ptas[n_source][1][1].get_lnlikelihood(new_point)
+            log_acc_ratio = log_L/Ts[j]
             log_acc_ratio += ptas[n_source][1][1].get_lnprior(new_point)
             log_acc_ratio += -ptas[n_source][1][1].get_lnlikelihood(samples_current)/Ts[j]
             log_acc_ratio += -ptas[n_source][1][1].get_lnprior(samples_current)
@@ -463,10 +480,12 @@ def rn_gwb_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, vary_w
                 #    print(samples[j,i,:])
                 #    print(samples[j,i+1,:])
                 a_yes[3,j] += 1
+                log_likelihood[j,i+1] = log_L
             else:
                 #if j==0: print("Neh")
                 samples[j,i+1,:] = samples[j,i,:]
                 a_no[3,j] += 1
+                log_likelihood[j,i+1] = log_likelihood[j,i]
         
         #Switching from GWB to RN
         elif gwb_on==1 and rn_on==0:
@@ -494,7 +513,8 @@ def rn_gwb_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, vary_w
             else:
                 new_point[n_source*7+num_per_psr_params] = old_log_amp
 
-            log_acc_ratio = ptas[n_source][0][1].get_lnlikelihood(new_point)/Ts[j]
+            log_L = ptas[n_source][0][1].get_lnlikelihood(new_point)
+            log_acc_ratio = log_L/Ts[j]
             log_acc_ratio += ptas[n_source][0][1].get_lnprior(new_point)
             log_acc_ratio += -ptas[n_source][1][0].get_lnlikelihood(np.delete(samples_current, range(n_source*7+num_per_psr_params, n_source*7+num_noise_params)))/Ts[j]
             log_acc_ratio += -ptas[n_source][1][0].get_lnprior(np.delete(samples_current, range(n_source*7+num_per_psr_params, n_source*7+num_noise_params)))
@@ -524,10 +544,12 @@ def rn_gwb_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, vary_w
                 #    print(samples[j,i,:])
                 #    print(samples[j,i+1,:])
                 a_yes[3,j] += 1
+                log_likelihood[j,i+1] = log_L
             else:
                 #if j==0: print("Neh")
                 samples[j,i+1,:] = samples[j,i,:]
                 a_no[3,j] += 1
+                log_likelihood[j,i+1] = log_likelihood[j,i]
 
         #Switching from RN to GWB
         else:
@@ -555,7 +577,8 @@ def rn_gwb_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, vary_w
             else:
                 new_point[n_source*7+num_noise_params] = old_log_amp
 
-            log_acc_ratio = ptas[n_source][1][0].get_lnlikelihood(np.delete(new_point, range(n_source*7+num_per_psr_params, n_source*7+num_noise_params)))/Ts[j]
+            log_L = ptas[n_source][1][0].get_lnlikelihood(np.delete(new_point, range(n_source*7+num_per_psr_params, n_source*7+num_noise_params)))
+            log_acc_ratio = log_L/Ts[j]
             log_acc_ratio += ptas[n_source][1][0].get_lnprior(np.delete(new_point, range(n_source*7+num_per_psr_params, n_source*7+num_noise_params)))
             log_acc_ratio += -ptas[n_source][0][1].get_lnlikelihood(samples_current)/Ts[j]
             log_acc_ratio += -ptas[n_source][0][1].get_lnprior(samples_current)
@@ -586,17 +609,19 @@ def rn_gwb_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, vary_w
                 #    print(samples[j,i,:])
                 #    print(samples[j,i+1,:])
                 a_yes[3,j] += 1
+                log_likelihood[j,i+1] = log_L
             else:
                 #if j==0: print("Neh")
                 samples[j,i+1,:] = samples[j,i,:]
                 a_no[3,j] += 1
+                log_likelihood[j,i+1] = log_likelihood[j,i]
 
 ################################################################################
 #
 #RN SWITCH (ON/OFF) MOVE
 #
 ################################################################################
-def rn_switch_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, vary_white_noise, include_rn, num_noise_params, num_per_psr_params, rn_gwb_on_prior, rn_log_amp_range, vary_rn_gamma):
+def rn_switch_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, vary_white_noise, include_rn, num_noise_params, num_per_psr_params, rn_gwb_on_prior, rn_log_amp_range, vary_rn_gamma, log_likelihood):
     if not include_rn:
        raise Exception("include_rn must be True to use this move")
     for j in range(n_chain):
@@ -631,7 +656,8 @@ def rn_switch_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, var
             #if j==0: print(samples_current, new_point)
             #if j==0: print(ptas[n_source][0][1].get_lnlikelihood(new_point)/Ts[j], ptas[n_source][0][1].get_lnprior(new_point), -ptas[n_source][1][1].get_lnlikelihood(samples_current)/Ts[j], -ptas[n_source][1][1].get_lnprior(samples_current))
 
-            log_acc_ratio = ptas[n_source][gwb_on][0].get_lnlikelihood(np.delete(new_point, range(n_source*7+num_per_psr_params, n_source*7+num_noise_params)))/Ts[j]
+            log_L = ptas[n_source][gwb_on][0].get_lnlikelihood(np.delete(new_point, range(n_source*7+num_per_psr_params, n_source*7+num_noise_params)))
+            log_acc_ratio = log_L/Ts[j]
             log_acc_ratio += ptas[n_source][gwb_on][0].get_lnprior(np.delete(new_point, range(n_source*7+num_per_psr_params, n_source*7+num_noise_params)))
             log_acc_ratio += -ptas[n_source][gwb_on][1].get_lnlikelihood(samples_current)/Ts[j]
             log_acc_ratio += -ptas[n_source][gwb_on][1].get_lnprior(samples_current)
@@ -672,10 +698,12 @@ def rn_switch_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, var
                 #    print(samples[j,i,:])
                 #    print(samples[j,i+1,:])
                 a_yes[2,j] += 1
+                log_likelihood[j,i+1] = log_L
             else:
                 #if j==0: print("Neh")
                 samples[j,i+1,:] = samples[j,i,:]
                 a_no[2,j] += 1
+                log_likelihood[j,i+1] = log_likelihood[j,i]
         #turning on ----------------------------------------------------------------------------------------------------------
         else:
             #if j==0: print("Turn on")
@@ -704,7 +732,8 @@ def rn_switch_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, var
             #if j==0: print(samples_current,new_point)
             #if j==0: print(ptas[n_source][1][1].get_lnlikelihood(new_point)/Ts[j], ptas[n_source][1][1].get_lnprior(new_point), -ptas[n_source][0][1].get_lnlikelihood(samples_current)/Ts[j], -ptas[n_source][0][1].get_lnprior(samples_current))
 
-            log_acc_ratio = ptas[n_source][gwb_on][1].get_lnlikelihood(new_point)/Ts[j]
+            log_L = ptas[n_source][gwb_on][1].get_lnlikelihood(new_point)
+            log_acc_ratio = log_L/Ts[j]
             log_acc_ratio += ptas[n_source][gwb_on][1].get_lnprior(new_point)
             log_acc_ratio += -ptas[n_source][gwb_on][0].get_lnlikelihood(np.delete(samples_current, range(n_source*7+num_per_psr_params, n_source*7+num_noise_params)))/Ts[j]
             log_acc_ratio += -ptas[n_source][gwb_on][0].get_lnprior(np.delete(samples_current, range(n_source*7+num_per_psr_params, n_source*7+num_noise_params)))
@@ -742,17 +771,19 @@ def rn_switch_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, var
                 #    print(samples[j,i,:])
                 #    print(samples[j,i+1,:])
                 a_yes[2,j] += 1
+                log_likelihood[j,i+1] = log_L
             else:
                 #if j==0: print("Meh")
                 samples[j,i+1,:] = samples[j,i,:]
                 a_no[2,j] += 1
+                log_likelihood[j,i+1] = log_likelihood[j,i]
 
 ################################################################################
 #
 #GWB SWITCH (ON/OFF) MOVE
 #
 ################################################################################
-def gwb_switch_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, vary_white_noise, include_gwb, num_noise_params, num_per_psr_params, rn_gwb_on_prior, gwb_log_amp_range, vary_gwb_gamma):
+def gwb_switch_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, vary_white_noise, include_gwb, num_noise_params, num_per_psr_params, rn_gwb_on_prior, gwb_log_amp_range, vary_gwb_gamma, log_likelihood):
     if not include_gwb:
        raise Exception("include_gwb must be True to use this move")
     for j in range(n_chain):
@@ -788,12 +819,14 @@ def gwb_switch_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, va
             #if j==0: print(ptas[n_source][0][1].get_lnlikelihood(new_point)/Ts[j], ptas[n_source][0][1].get_lnprior(new_point), -ptas[n_source][1][1].get_lnlikelihood(samples_current)/Ts[j], -ptas[n_source][1][1].get_lnprior(samples_current))
 
             if rn_on==1:
-                log_acc_ratio = ptas[n_source][0][rn_on].get_lnlikelihood(new_point)/Ts[j]
+                log_L = ptas[n_source][0][rn_on].get_lnlikelihood(new_point)
+                log_acc_ratio = log_L/Ts[j]
                 log_acc_ratio += ptas[n_source][0][rn_on].get_lnprior(new_point)
                 log_acc_ratio += -ptas[n_source][1][rn_on].get_lnlikelihood(samples_current)/Ts[j]
                 log_acc_ratio += -ptas[n_source][1][rn_on].get_lnprior(samples_current)
             else:
-                log_acc_ratio = ptas[n_source][0][rn_on].get_lnlikelihood(np.delete(new_point, range(n_source*7+num_per_psr_params, n_source*7+num_noise_params)))/Ts[j]
+                log_L = ptas[n_source][0][rn_on].get_lnlikelihood(np.delete(new_point, range(n_source*7+num_per_psr_params, n_source*7+num_noise_params)))
+                log_acc_ratio = log_L/Ts[j]
                 log_acc_ratio += ptas[n_source][0][rn_on].get_lnprior(np.delete(new_point, range(n_source*7+num_per_psr_params, n_source*7+num_noise_params)))
                 log_acc_ratio += -ptas[n_source][1][rn_on].get_lnlikelihood(np.delete(samples_current, range(n_source*7+num_per_psr_params, n_source*7+num_noise_params)))/Ts[j]
                 log_acc_ratio += -ptas[n_source][1][rn_on].get_lnprior(np.delete(samples_current, range(n_source*7+num_per_psr_params, n_source*7+num_noise_params)))
@@ -814,9 +847,11 @@ def gwb_switch_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, va
                 samples[j,i+1,1:n_source*7+1] = new_point[:n_source*7]
                 samples[j,i+1,max_n_source*7+1:] = new_point[n_source*7:]
                 a_yes[1,j] += 1
+                log_likelihood[j,i+1] = log_L
             else:
                 samples[j,i+1,:] = samples[j,i,:]
                 a_no[1,j] += 1
+                log_likelihood[j,i+1] = log_likelihood[j,i]
         #turning on ----------------------------------------------------------------------------------------------------------
         else:
             #if j==0: print("Turn on")
@@ -846,12 +881,14 @@ def gwb_switch_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, va
             #if j==0: print(ptas[n_source][1][1].get_lnlikelihood(new_point)/Ts[j], ptas[n_source][1][1].get_lnprior(new_point), -ptas[n_source][0][1].get_lnlikelihood(samples_current)/Ts[j], -ptas[n_source][0][1].get_lnprior(samples_current))
 
             if rn_on==1:
-                log_acc_ratio = ptas[n_source][1][rn_on].get_lnlikelihood(new_point)/Ts[j]
+                log_L = ptas[n_source][1][rn_on].get_lnlikelihood(new_point)
+                log_acc_ratio = log_L/Ts[j]
                 log_acc_ratio += ptas[n_source][1][rn_on].get_lnprior(new_point)
                 log_acc_ratio += -ptas[n_source][0][rn_on].get_lnlikelihood(samples_current)/Ts[j]
                 log_acc_ratio += -ptas[n_source][0][rn_on].get_lnprior(samples_current)
             else:
-                log_acc_ratio = ptas[n_source][1][rn_on].get_lnlikelihood(np.delete(new_point, range(n_source*7+num_per_psr_params, n_source*7+num_noise_params)))/Ts[j]
+                log_L = ptas[n_source][1][rn_on].get_lnlikelihood(np.delete(new_point, range(n_source*7+num_per_psr_params, n_source*7+num_noise_params)))
+                log_acc_ratio = log_L/Ts[j]
                 log_acc_ratio += ptas[n_source][1][rn_on].get_lnprior(np.delete(new_point, range(n_source*7+num_per_psr_params, n_source*7+num_noise_params)))
                 log_acc_ratio += -ptas[n_source][0][rn_on].get_lnlikelihood(np.delete(samples_current, range(n_source*7+num_per_psr_params, n_source*7+num_noise_params)))/Ts[j]
                 log_acc_ratio += -ptas[n_source][0][rn_on].get_lnprior(np.delete(samples_current, range(n_source*7+num_per_psr_params, n_source*7+num_noise_params)))
@@ -872,16 +909,18 @@ def gwb_switch_move(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, va
                 samples[j,i+1,1:n_source*7+1] = new_point[:n_source*7]
                 samples[j,i+1,max_n_source*7+1:] = new_point[n_source*7:]
                 a_yes[1,j] += 1
+                log_likelihood[j,i+1] = log_L
             else:
                 samples[j,i+1,:] = samples[j,i,:]
                 a_no[1,j] += 1
+                log_likelihood[j,i+1] = log_likelihood[j,i]
 
 ################################################################################
 #
 #REVERSIBLE-JUMP (RJ, aka TRANS-DIMENSIONAL) MOVE
 #
 ################################################################################
-def do_rj_move(n_chain, max_n_source, n_source_prior, ptas, samples, i, Ts, a_yes, a_no, freqs, fe, inc_max, psi_max, phase0_max, h_max, rj_record, vary_white_noise, include_gwb, num_noise_params, num_per_psr_params):
+def do_rj_move(n_chain, max_n_source, n_source_prior, ptas, samples, i, Ts, a_yes, a_no, freqs, fe, inc_max, psi_max, phase0_max, h_max, rj_record, vary_white_noise, include_gwb, num_noise_params, num_per_psr_params, log_likelihood):
     for j in range(n_chain):
         n_source = get_n_source(samples,j,i)
 
@@ -941,7 +980,8 @@ def do_rj_move(n_chain, max_n_source, n_source_prior, ptas, samples, i, Ts, a_ye
             new_source = np.array([np.cos(gw_theta), cos_inc, gw_phi, log_f_new, log10_h, phase0, psi])
             new_point[n_source*7:(n_source+1)*7] = new_source
 
-            log_acc_ratio = ptas[(n_source+1)][gwb_on][rn_on].get_lnlikelihood(new_point)/Ts[j]
+            log_L = ptas[(n_source+1)][gwb_on][rn_on].get_lnlikelihood(new_point)
+            log_acc_ratio = log_L/Ts[j]
             log_acc_ratio += ptas[(n_source+1)][gwb_on][rn_on].get_lnprior(new_point)
             log_acc_ratio += -ptas[n_source][gwb_on][rn_on].get_lnlikelihood(samples_current)/Ts[j]
             log_acc_ratio += -ptas[n_source][gwb_on][rn_on].get_lnprior(samples_current)
@@ -971,9 +1011,11 @@ def do_rj_move(n_chain, max_n_source, n_source_prior, ptas, samples, i, Ts, a_ye
                 samples[j,i+1,1:(n_source+1)*7+1] = new_point[:(n_source+1)*7]
                 samples[j,i+1,max_n_source*7+1:] = new_point[(n_source+1)*7:]
                 a_yes[0,j] += 1
+                log_likelihood[j,i+1] = log_L
             else:
                 samples[j,i+1,:] = samples[j,i,:]
                 a_no[0,j] += 1
+                log_likelihood[j,i+1] = log_likelihood[j,i]
 
            
         elif n_source==max_n_source or (direction_decide>add_prob and n_source!=0):   #removing a signal----------------------------------------------------------
@@ -984,7 +1026,8 @@ def do_rj_move(n_chain, max_n_source, n_source_prior, ptas, samples, i, Ts, a_ye
             samples_current = np.delete(samples[j,i,1:], range(n_source*7,max_n_source*7))
             new_point = np.delete(samples_current, range(remove_index*7,(remove_index+1)*7))
             
-            log_acc_ratio = ptas[(n_source-1)][gwb_on][rn_on].get_lnlikelihood(new_point)/Ts[j]
+            log_L = ptas[(n_source-1)][gwb_on][rn_on].get_lnlikelihood(new_point)
+            log_acc_ratio = log_L/Ts[j]
             log_acc_ratio += ptas[(n_source-1)][gwb_on][rn_on].get_lnprior(new_point)
             log_acc_ratio += -ptas[n_source][gwb_on][rn_on].get_lnlikelihood(samples_current)/Ts[j]
             log_acc_ratio += -ptas[n_source][gwb_on][rn_on].get_lnprior(samples_current)
@@ -1030,9 +1073,11 @@ def do_rj_move(n_chain, max_n_source, n_source_prior, ptas, samples, i, Ts, a_ye
                 samples[j,i+1,1:(n_source-1)*7+1] = new_point[:(n_source-1)*7]
                 samples[j,i+1,max_n_source*7+1:] = new_point[(n_source-1)*7:]
                 a_yes[0,j] += 1
+                log_likelihood[j,i+1] = log_L
             else:
                 samples[j,i+1,:] = samples[j,i,:]
                 a_no[0,j] += 1
+                log_likelihood[j,i+1] = log_likelihood[j,i]
 
 ################################################################################
 #
@@ -1040,7 +1085,7 @@ def do_rj_move(n_chain, max_n_source, n_source_prior, ptas, samples, i, Ts, a_ye
 #
 ################################################################################
 
-def do_fe_global_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, freqs, fe, inc_max, psi_max, phase0_max, h_max, vary_white_noise, include_gwb, num_noise_params, num_per_psr_params, Fe_pdet, Fe_alpha, psi_pdf, cos_inc_pdf, phase0_pdf, log_h_pdf):
+def do_fe_global_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, freqs, fe, inc_max, psi_max, phase0_max, h_max, vary_white_noise, include_gwb, num_noise_params, num_per_psr_params, Fe_pdet, Fe_alpha, psi_pdf, cos_inc_pdf, phase0_pdf, log_h_pdf, log_likelihood):
     #ndim = n_source*7
        
     #set probability of deterministic vs flat proposal in extrinsic parameters
@@ -1065,6 +1110,7 @@ def do_fe_global_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, 
         if n_source==0:
             samples[j,i+1,:] = samples[j,i,:]
             a_no[5,j]+=1
+            log_likelihood[j,i+1] = log_likelihood[j,i]
             #print("No source to vary!")
             continue
 
@@ -1120,7 +1166,8 @@ def do_fe_global_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, 
         if fe_new_point>fe_limit:
             fe_new_point=fe_limit        
         
-        log_acc_ratio = ptas[n_source][gwb_on][rn_on].get_lnlikelihood(new_point)/Ts[j]
+        log_L = ptas[n_source][gwb_on][rn_on].get_lnlikelihood(new_point)
+        log_acc_ratio = log_L/Ts[j]
         log_acc_ratio += ptas[n_source][gwb_on][rn_on].get_lnprior(new_point)
         log_acc_ratio += -ptas[n_source][gwb_on][rn_on].get_lnlikelihood(samples_current)/Ts[j]
         log_acc_ratio += -ptas[n_source][gwb_on][rn_on].get_lnprior(samples_current)
@@ -1214,9 +1261,11 @@ def do_fe_global_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, 
             samples[j,i+1,1:n_source*7+1] = new_point[:n_source*7]
             samples[j,i+1,max_n_source*7+1:] = new_point[n_source*7:]
             a_yes[5,j]+=1
+            log_likelihood[j,i+1] = log_L
         else:
             samples[j,i+1,:] = samples[j,i,:]
             a_no[5,j]+=1
+            log_likelihood[j,i+1] = log_likelihood[j,i]
     
 
 ################################################################################
@@ -1225,7 +1274,7 @@ def do_fe_global_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, 
 #
 ################################################################################
 
-def regular_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, eig, eig_gwb_rn, include_gwb, num_noise_params, num_per_psr_params, vary_rn, vary_rn_gamma, vary_gwb_gamma):
+def regular_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, eig, eig_gwb_rn, include_gwb, num_noise_params, num_per_psr_params, vary_rn, vary_rn_gamma, vary_gwb_gamma, log_likelihood):
     for j in range(n_chain):
         n_source = get_n_source(samples,j,i)
 
@@ -1256,6 +1305,7 @@ def regular_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, eig, 
         else:
             samples[j,i+1,:] = samples[j,i,:]
             a_no[6,j]+=1
+            log_likelihood[j,i+1] = log_likelihood[j,i]
             #print("Nothing to vary!")
             continue
         
@@ -1300,7 +1350,8 @@ def regular_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, eig, 
 
         #if j==0:
         #    print(new_point)
-        log_acc_ratio = ptas[n_source][gwb_on][rn_on].get_lnlikelihood(new_point)/Ts[j]
+        log_L = ptas[n_source][gwb_on][rn_on].get_lnlikelihood(new_point)
+        log_acc_ratio = log_L/Ts[j]
         log_acc_ratio += ptas[n_source][gwb_on][rn_on].get_lnprior(new_point)
         log_acc_ratio += -ptas[n_source][gwb_on][rn_on].get_lnlikelihood(samples_current)/Ts[j]
         log_acc_ratio += -ptas[n_source][gwb_on][rn_on].get_lnprior(samples_current)
@@ -1313,9 +1364,11 @@ def regular_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, eig, 
             samples[j,i+1,1:n_source*7+1] = new_point[:n_source*7]
             samples[j,i+1,max_n_source*7+1:] = new_point[n_source*7:]
             a_yes[6,j]+=1
+            log_likelihood[j,i+1] = log_L
         else:
             samples[j,i+1,:] = samples[j,i,:]
             a_no[6,j]+=1
+            log_likelihood[j,i+1] = log_likelihood[j,i]
 
 ################################################################################
 #
@@ -1323,7 +1376,7 @@ def regular_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, eig, 
 #
 ################################################################################
 
-def noise_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, eig_per_psr, include_gwb, num_noise_params, num_per_psr_params, vary_white_noise):
+def noise_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, eig_per_psr, include_gwb, num_noise_params, num_per_psr_params, vary_white_noise, log_likelihood):
     for j in range(n_chain):
         n_source = get_n_source(samples,j,i)
 
@@ -1349,7 +1402,8 @@ def noise_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, eig_per
 
         new_point = samples_current + jump*np.random.normal()
 
-        log_acc_ratio = ptas[n_source][gwb_on][rn_on].get_lnlikelihood(new_point)/Ts[j]
+        log_L = ptas[n_source][gwb_on][rn_on].get_lnlikelihood(new_point)
+        log_acc_ratio = log_L/Ts[j]
         log_acc_ratio += ptas[n_source][gwb_on][rn_on].get_lnprior(new_point)
         log_acc_ratio += -ptas[n_source][gwb_on][rn_on].get_lnlikelihood(samples_current)/Ts[j]
         log_acc_ratio += -ptas[n_source][gwb_on][rn_on].get_lnprior(samples_current)
@@ -1362,9 +1416,11 @@ def noise_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, eig_per
             samples[j,i+1,1:n_source*7+1] = new_point[:n_source*7]
             samples[j,i+1,max_n_source*7+1:] = new_point[n_source*7:]
             a_yes[7,j]+=1
+            log_likelihood[j,i+1] = log_L
         else:
             samples[j,i+1,:] = samples[j,i,:]
             a_no[7,j]+=1
+            log_likelihood[j,i+1] = log_likelihood[j,i]
 
 
 ################################################################################
@@ -1372,7 +1428,7 @@ def noise_jump(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, eig_per
 #PARALLEL TEMPERING SWAP JUMP ROUTINE
 #
 ################################################################################
-def do_pt_swap(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, swap_record, vary_white_noise, include_gwb, num_noise_params, num_per_psr_params):
+def do_pt_swap(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, swap_record, vary_white_noise, include_gwb, num_noise_params, num_per_psr_params, log_likelihood):
     swap_chain = np.random.randint(n_chain-1)
 
     n_source1 = get_n_source(samples,swap_chain,i)
@@ -1389,27 +1445,34 @@ def do_pt_swap(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, swap_re
     rn_on2 = get_rn_on(samples,swap_chain+1,i,max_n_source,num_per_psr_params)
     
     samples_current1 = np.delete(samples[swap_chain,i,1:], range(n_source1*7,max_n_source*7))
-    samples_current2 = np.delete(samples[swap_chain+1,i,1:], range(n_source2*7,max_n_source*7)) 
+    samples_current2 = np.delete(samples[swap_chain+1,i,1:], range(n_source2*7,max_n_source*7))
 
-    log_acc_ratio = -ptas[n_source1][gwb_on1][rn_on1].get_lnlikelihood(samples_current1) / Ts[swap_chain]
-    log_acc_ratio += -ptas[n_source2][gwb_on2][rn_on2].get_lnlikelihood(samples_current2) / Ts[swap_chain+1]
-    log_acc_ratio += ptas[n_source2][gwb_on2][rn_on2].get_lnlikelihood(samples_current2) / Ts[swap_chain]
-    log_acc_ratio += ptas[n_source1][gwb_on1][rn_on1].get_lnlikelihood(samples_current1) / Ts[swap_chain+1]
+    log_L1 = ptas[n_source1][gwb_on1][rn_on1].get_lnlikelihood(samples_current1)
+    log_L2 = ptas[n_source2][gwb_on2][rn_on2].get_lnlikelihood(samples_current2)
+
+    log_acc_ratio = -log_L1 / Ts[swap_chain]
+    log_acc_ratio += -log_L2 / Ts[swap_chain+1]
+    log_acc_ratio += log_L2 / Ts[swap_chain]
+    log_acc_ratio += log_L1 / Ts[swap_chain+1]
 
     acc_ratio = np.exp(log_acc_ratio)
     if np.random.uniform()<=acc_ratio:
         for j in range(n_chain):
             if j==swap_chain:
                 samples[j,i+1,:] = samples[j+1,i,:]
+                log_likelihood[j,i+1] = log_L2
             elif j==swap_chain+1:
                 samples[j,i+1,:] = samples[j-1,i,:]
+                log_likelihood[j,i+1] = log_L1
             else:
                 samples[j,i+1,:] = samples[j,i,:]
+                log_likelihood[j,i+1] = log_likelihood[j,i]
         a_yes[4,swap_chain]+=1
         swap_record.append(swap_chain)
     else:
         for j in range(n_chain):
             samples[j,i+1,:] = samples[j,i,:]
+            log_likelihood[j,i+1] = log_likelihood[j,i]
         a_no[4,swap_chain]+=1
 
 ################################################################################
