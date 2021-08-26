@@ -30,7 +30,7 @@ from enterprise_extensions import deterministic
 def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, n_source_prior='flat', n_source_start='random', RJ_weight=0,
                regular_weight=3, noise_jump_weight=3, PT_swap_weight=1, T_ladder = None,
                Fe_proposal_weight=0, fe_file=None, Fe_pdet=0.5, Fe_alpha=0.1, draw_from_prior_weight=0,
-               de_weight=0, prior_recovery=False, cw_amp_prior='uniform', gwb_amp_prior='uniform', rn_amp_prior='uniform', per_psr_rn_amp_prior='uniform',
+               prior_recovery=False, cw_amp_prior='uniform', gwb_amp_prior='uniform', rn_amp_prior='uniform', per_psr_rn_amp_prior='uniform',
                gwb_log_amp_range=[-18,-11], n_comp_common=30, n_comp_per_psr_rn=30, rn_log_amp_range=[-18,-11], per_psr_rn_log_amp_range=[-18,-11],
                vary_gwb_gamma=True, vary_rn_gamma=True,
                cw_log_amp_range=[-18,-11], cw_f_range=[3.5e-9,1e-7],
@@ -59,8 +59,6 @@ def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, n_source_prior='flat'
     
     #fisher updating every n_fish_update step
     n_fish_update = 200 #50
-    #add current sample to de history file every n_de_history step
-    n_de_history = 10
 
     #setting up temperature ladder
     if T_ladder is None:
@@ -74,13 +72,6 @@ def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, n_source_prior='flat'
         n_chain = Ts.size
         print("Using {0} temperature chains with custom spacing: ".format(n_chain),Ts)
  
-    #array to hold Differential Evolution history
-    history_size = 1000    
-    de_history = np.zeros((n_chain, history_size, max_n_source*7+1))
-    #start DE after de_start_iter iterations
-    de_start_iter = 100
-    
-
     #GWB and RN on/off priors
     if include_gwb and include_rn and rn_gwb_on_prior is None:
         rn_gwb_on_prior = np.array([[(1-rn_on_prior)*(1-gwb_on_prior), rn_on_prior*(1-gwb_on_prior)],
