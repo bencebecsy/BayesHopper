@@ -29,14 +29,15 @@ from enterprise_extensions import deterministic
 
 def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, n_source_prior='flat', n_source_start='random', RJ_weight=0,
                regular_weight=3, noise_jump_weight=3, PT_swap_weight=1, T_ladder = None,
-               Fe_proposal_weight=0, fe_file=None, Fe_pdet=0.5, Fe_alpha=0.1, draw_from_prior_weight=0,
+               Fe_proposal_weight=0, fe_file=None, Fe_pdet=0.5, Fe_alpha=0.1,
                prior_recovery=False, cw_amp_prior='uniform', gwb_amp_prior='uniform', rn_amp_prior='uniform', per_psr_rn_amp_prior='uniform',
                gwb_log_amp_range=[-18,-11], n_comp_common=30, n_comp_per_psr_rn=30, rn_log_amp_range=[-18,-11], per_psr_rn_log_amp_range=[-18,-11],
                vary_gwb_gamma=True, vary_rn_gamma=True,
                cw_log_amp_range=[-18,-11], cw_f_range=[3.5e-9,1e-7],
                vary_white_noise=False, efac_start=1.0,
                include_gwb=False, gwb_switch_weight=0, include_psr_term=False,
-               include_rn=False, include_per_psr_rn=False, vary_rn=False, vary_per_psr_rn=False, rn_params=[-13.0,1.0], per_psr_rn_start_file=None, rn_on_prior=0.5, rn_switch_weight=0, jupyter_notebook=False,
+               include_rn=False, include_per_psr_rn=False, vary_rn=False, vary_per_psr_rn=False, rn_params=[-13.0,1.0], per_psr_rn_start_file=None,
+               rn_on_prior=0.5, rn_switch_weight=0, jupyter_notebook=False,
                gwb_on_prior=0.5, rn_gwb_on_prior=None, include_equad_ecorr=False, wn_backend_selection=False, noisedict_file=None,
                save_every_n=10000, savefile=None, resume_from=None, n_status_update = 100,
                rn_gwb_move_weight=0):
