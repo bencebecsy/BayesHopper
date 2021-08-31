@@ -368,13 +368,13 @@ Fe-proposals: {1:.2f}%\nJumps along Fisher eigendirections: {2:.2f}%\nNoise jump
                             dim = 2
                         else:
                             dim = 1
-                    eigvec_rn = get_fisher_eigenvectors(strip_samples(samples[j,i,:],n_source,1,gwb_on,max_n_source,num_per_psr_params,num_noise_params,num_params), ptas[n_source][gwb_on][1], T_chain=Ts[j], n_source=1, dim=dim, offset=n_source*7+num_per_psr_params)
+                    eigvec_rn = get_fisher_eigenvectors(strip_samples(samples[j,i,:],n_source,1,1,max_n_source,num_per_psr_params,num_noise_params,num_params), ptas[n_source][1][1], T_chain=Ts[j], n_source=1, dim=dim, offset=n_source*7+num_per_psr_params)
                     if np.all(eigvec_rn):
                         eig_gwb_rn[j,:,:] = eigvec_rn[0,:,:]
 
                     #CW eigenvectors
                     if n_source!=0:
-                        eigenvectors = get_fisher_eigenvectors(strip_samples(samples[j,i,:],n_source,1,gwb_on,max_n_source,num_per_psr_params,num_noise_params,num_params), ptas[n_source][gwb_on][1], T_chain=Ts[j], n_source=n_source)
+                        eigenvectors = get_fisher_eigenvectors(strip_samples(samples[j,i,:],n_source,1,1,max_n_source,num_per_psr_params,num_noise_params,num_params), ptas[n_source][1][1], T_chain=Ts[j], n_source=n_source)
                         if np.all(eigenvectors):
                             eig[j,:n_source,:,:] = eigenvectors
             elif samples[0,i,0]!=0:
@@ -1536,8 +1536,8 @@ def do_pt_swap(n_chain, max_n_source, ptas, samples, i, Ts, a_yes, a_no, swap_re
     rn_on1 = get_rn_on(samples,swap_chain,i,max_n_source,num_per_psr_params)
     rn_on2 = get_rn_on(samples,swap_chain+1,i,max_n_source,num_per_psr_params)
     
-    samples_current_stripped1 = strip_samples(samples[swap_chain,i,:],n_source1,rn_on1,gwb_on1,max_n_source,num_per_psr_params,num_noise_params,num_params)
-    samples_current_stripped2 = strip_samples(samples[swap_chain+1,i,:],n_source2,rn_on2,gwb_on2,max_n_source,num_per_psr_params,num_noise_params,num_params)
+    #samples_current_stripped1 = strip_samples(samples[swap_chain,i,:],n_source1,rn_on1,gwb_on1,max_n_source,num_per_psr_params,num_noise_params,num_params)
+    #samples_current_stripped2 = strip_samples(samples[swap_chain+1,i,:],n_source2,rn_on2,gwb_on2,max_n_source,num_per_psr_params,num_noise_params,num_params)
 
     #log_L1 = ptas[n_source1][gwb_on1][rn_on1].get_lnlikelihood(samples_current_stripped1)
     #log_L2 = ptas[n_source2][gwb_on2][rn_on2].get_lnlikelihood(samples_current_stripped2)
