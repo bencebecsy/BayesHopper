@@ -1027,7 +1027,7 @@ def do_rj_move(n_chain, max_n_source, n_source_prior, ptas, samples, i, Ts, a_ye
             
             new_point = np.copy(samples[j,i,:])
             new_source = np.array([np.cos(gw_theta), cos_inc, gw_phi, log_f_new, log10_h, phase0, psi])
-            new_point[n_source*7:(n_source+1)*7] = np.copy(new_source)
+            new_point[1+n_source*7:1+(n_source+1)*7] = np.copy(new_source)
             new_point[0] = n_source+1
             
             new_point_stripped = strip_samples(new_point,n_source+1,rn_on,gwb_on,max_n_source,num_per_psr_params,num_noise_params,num_params)
