@@ -180,12 +180,9 @@ def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, n_source_prior='flat'
             else:
                 n_source = n_source_start
             samples[j,0,0] = n_source
-            #print(samples[0,0,:])
             print(n_source)
             if n_source!=0:
                 samples[j,0,1:n_source*7+1] = np.hstack(p.sample() for p in ptas[n_source][0][0].params[:n_source*7])
-            #not needed, because zeros are already there: samples[j,0,n_source*7+1:max_n_source*7+1] = np.zeros((max_n_source-n_source)*7)
-            #print(samples[0,0,:])
             if vary_white_noise and not vary_per_psr_rn:
                 samples[j,0,max_n_source*7+1:max_n_source*7+1+len(pulsars)] = np.ones(len(pulsars))*efac_start
             elif vary_per_psr_rn and not vary_white_noise:
@@ -207,7 +204,6 @@ def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, n_source_prior='flat'
 
                 else:
                     samples[j,0,max_n_source*7+1+num_noise_params] = ptas[n_source][1][1].params[n_source*7+num_noise_params].sample()
-                #samples[j,0,max_n_source*7+1+num_noise_params] = 0.0 #start with GWB off
         #printing info about initial parameters
         for j in range(n_chain):
             print(j)
@@ -360,7 +356,6 @@ Fe-proposals: {1:.2f}%\nJumps along Fisher eigendirections: {2:.2f}%\nNoise jump
 
     for i in range(int(start_iter), int(stop_iter-1)): #-1 because ith step here produces (i+1)th sample based on ith sample
         #print(samples[:,i,:])
-        #print("Pff", str(i))
         ########################################################
         #
         #logging PT acceptance fraction
@@ -382,14 +377,10 @@ Fe-proposals: {1:.2f}%\nJumps along Fisher eigendirections: {2:.2f}%\nNoise jump
                 kappa = 1.0/T_dynamic_nu * T_dynamic_t0/(PT_hist_idx+T_dynamic_t0)
                 #dSs = kappa * (acc_fraction[5,:-2] - acc_fraction[5,1:-1])
                 dSs = kappa * (PT_acc[:-1,i] - PT_acc[1:,i])
-                #print(dSs)
                 deltaTs = np.diff(1 / betas[:-1,i-1])
-                #print(deltaTs)
                 deltaTs *= np.exp(dSs)
-                #print(deltaTs)
 
                 new_betas = 1 / (np.cumsum(deltaTs) + 1 / betas[0,i-1])
-                #print(new_betas)
 
                 #set new betas
                 betas[-1,i] = 0.0
@@ -522,7 +513,7 @@ def rn_gwb_move(n_chain, max_n_source, ptas, samples, i, betas, a_yes, a_no, var
             a_no[3,j] += 1
             log_likelihood[j,i+1] = log_likelihood[j,i]
             #print("Nothing to vary!")
-        #Both are on -- miximng move
+        #Both are on -- mixing move
         elif gwb_on==1 and rn_on==1:
             samples_current = np.copy(samples[j,i,:])
             old_gwb_log_amp = np.copy(samples_current[1+max_n_source*7+num_noise_params])
@@ -551,33 +542,16 @@ def rn_gwb_move(n_chain, max_n_source, ptas, samples, i, betas, a_yes, a_no, var
             log_L = ptas[n_source][1][1].get_lnlikelihood(new_point_stripped)
             log_acc_ratio = log_L*betas[j,i]
             log_acc_ratio += ptas[n_source][1][1].get_lnprior(new_point_stripped)
-            #log_acc_ratio += -ptas[n_source][1][1].get_lnlikelihood(samples_current)/Ts[j]
-            #bubba_lubba = log_likelihood[j,i]/Ts[j] -ptas[n_source][1][1].get_lnlikelihood(samples_current_stripped)/Ts[j]
-            #if bubba_lubba != 0.0:
-            #    print("Bubba rn_gwb")
-            #    print(j)
-            #    print(bubba_lubba)
-            #    print(log_likelihood[j,i]/Ts[j], ptas[n_source][1][1].get_lnlikelihood(samples_current_stripped)/Ts[j])
             log_acc_ratio += -log_likelihood[j,i]*betas[j,i]
             log_acc_ratio += -ptas[n_source][1][1].get_lnprior(samples_current_stripped)
             
             acc_ratio = np.exp(log_acc_ratio)
 
-            #if j==0:
-            #    print(old_gwb_log_amp, new_gwb_log_amp)
-            #    print(old_rn_log_amp, new_rn_log_amp)
-            #    print(acc_ratio)
-
             if np.random.uniform()<=acc_ratio:
-                #if j==0: print('wooooow')
                 samples[j,i+1,:] = np.copy(new_point)
-                #if j==0:
-                #    print(samples[j,i,:])
-                #    print(samples[j,i+1,:])
                 a_yes[3,j] += 1
                 log_likelihood[j,i+1] = log_L
             else:
-                #if j==0: print("Neh")
                 samples[j,i+1,:] = samples[j,i,:]
                 a_no[3,j] += 1
                 log_likelihood[j,i+1] = log_likelihood[j,i]
@@ -614,13 +588,6 @@ def rn_gwb_move(n_chain, max_n_source, ptas, samples, i, betas, a_yes, a_no, var
             log_L = ptas[n_source][0][1].get_lnlikelihood(new_point_stripped)
             log_acc_ratio = log_L*betas[j,i]
             log_acc_ratio += ptas[n_source][0][1].get_lnprior(new_point_stripped)
-            #log_acc_ratio += -ptas[n_source][1][0].get_lnlikelihood(np.delete(samples_current, range(n_source*7+num_per_psr_params, n_source*7+num_noise_params)))/Ts[j]
-            #bubba_lubba = log_likelihood[j,i]/Ts[j] -ptas[n_source][1][0].get_lnlikelihood(samples_current_stripped)/Ts[j]
-            #if bubba_lubba != 0.0:
-            #    print("Bubba rn_gwb")
-            #    print(j)
-            #    print(bubba_lubba)
-            #    print(log_likelihood[j,i]/Ts[j], ptas[n_source][1][0].get_lnlikelihood(samples_current_stripped)/Ts[j])
             log_acc_ratio += -log_likelihood[j,i]*betas[j,i]
             log_acc_ratio += -ptas[n_source][1][0].get_lnprior(samples_current_stripped)
 
@@ -634,22 +601,13 @@ def rn_gwb_move(n_chain, max_n_source, ptas, samples, i, betas, a_yes, a_no, var
                 acc_ratio *= gamma_proposal_old
 
             #apply prior
-            #acc_ratio *= (1-gwb_on_prior)/gwb_on_prior
-            #acc_ratio *= rn_on_prior/(1-rn_on_prior)
             acc_ratio *= rn_gwb_on_prior[0,1]/rn_gwb_on_prior[1,0]
 
-            #if j==0: print(acc_ratio)
-
             if np.random.uniform()<=acc_ratio:
-                #if j==0: print('wooooow')
                 samples[j,i+1,:] = np.copy(new_point)
-                #if j==0:
-                #    print(samples[j,i,:])
-                #    print(samples[j,i+1,:])
                 a_yes[3,j] += 1
                 log_likelihood[j,i+1] = log_L
             else:
-                #if j==0: print("Neh")
                 samples[j,i+1,:] = samples[j,i,:]
                 a_no[3,j] += 1
                 log_likelihood[j,i+1] = log_likelihood[j,i]
@@ -686,13 +644,6 @@ def rn_gwb_move(n_chain, max_n_source, ptas, samples, i, betas, a_yes, a_no, var
             log_L = ptas[n_source][1][0].get_lnlikelihood(new_point_stripped)
             log_acc_ratio = log_L*betas[j,i]
             log_acc_ratio += ptas[n_source][1][0].get_lnprior(new_point_stripped)
-            #log_acc_ratio += -ptas[n_source][0][1].get_lnlikelihood(samples_current)/Ts[j]
-            #bubba_lubba = log_likelihood[j,i]/Ts[j] -ptas[n_source][0][1].get_lnlikelihood(samples_current_stripped)/Ts[j]
-            #if bubba_lubba != 0.0:
-            #    print("Bubba rn_gwb")
-            #    print(j)
-            #    print(bubba_lubba)
-            #    print(log_likelihood[j,i]/Ts[j], ptas[n_source][0][1].get_lnlikelihood(samples_current_stripped)/Ts[j])
             log_acc_ratio += -log_likelihood[j,i]*betas[j,i]
             log_acc_ratio += -ptas[n_source][0][1].get_lnprior(samples_current_stripped)
 
@@ -707,22 +658,13 @@ def rn_gwb_move(n_chain, max_n_source, ptas, samples, i, betas, a_yes, a_no, var
                 acc_ratio *= gamma_proposal_old
 
             #apply priors
-            #acc_ratio *= (1-rn_on_prior)/rn_on_prior
-            #acc_ratio *= gwb_on_prior/(1-gwb_on_prior)
             acc_ratio *= rn_gwb_on_prior[1,0]/rn_gwb_on_prior[0,1]
 
-            #if j==0: print(acc_ratio)
-
             if np.random.uniform()<=acc_ratio:
-                #if j==0: print('oowoo')
                 samples[j,i+1,:] = np.copy(new_point)
-                #if j==0:
-                #    print(samples[j,i,:])
-                #    print(samples[j,i+1,:])
                 a_yes[3,j] += 1
                 log_likelihood[j,i+1] = log_L
             else:
-                #if j==0: print("Neh")
                 samples[j,i+1,:] = samples[j,i,:]
                 a_no[3,j] += 1
                 log_likelihood[j,i+1] = log_likelihood[j,i]
@@ -743,7 +685,6 @@ def rn_switch_move(n_chain, max_n_source, ptas, samples, i, betas, a_yes, a_no, 
         
         #turning off ---------------------------------------------------------------------------------------------------------
         if rn_on==1:
-            #if j==0: print("Turn off")
             samples_current = np.copy(samples[j,i,:])
             new_point = np.copy(samples[j,i,:])
             if vary_rn_gamma:
@@ -761,26 +702,12 @@ def rn_switch_move(n_chain, max_n_source, ptas, samples, i, betas, a_yes, a_no, 
             else:
                 new_point[1+max_n_source*7+num_per_psr_params] = 0.0
 
-            #change GWB amplitude to help acceptance
-            #if np.random.uniform()<=0.5:
-            #    new_point[n_source*7+num_noise_params] = ptas[n_source][1][1].params[n_source*7+num_noise_params].sample()
-
-            #if j==0: print(samples_current, new_point)
-            #if j==0: print(ptas[n_source][0][1].get_lnlikelihood(new_point)/Ts[j], ptas[n_source][0][1].get_lnprior(new_point), -ptas[n_source][1][1].get_lnlikelihood(samples_current)/Ts[j], -ptas[n_source][1][1].get_lnprior(samples_current))
-
             new_point_stripped = strip_samples(new_point,n_source,0,gwb_on,max_n_source,num_per_psr_params,num_noise_params,num_params)
             samples_current_stripped = strip_samples(samples_current,n_source,1,gwb_on,max_n_source,num_per_psr_params,num_noise_params,num_params)            
 
             log_L = ptas[n_source][gwb_on][0].get_lnlikelihood(new_point_stripped)
             log_acc_ratio = log_L*betas[j,i]
             log_acc_ratio += ptas[n_source][gwb_on][0].get_lnprior(new_point_stripped)
-            #log_acc_ratio += -ptas[n_source][gwb_on][1].get_lnlikelihood(samples_current)/Ts[j]
-            #bubba_lubba = log_likelihood[j,i]/Ts[j] -ptas[n_source][gwb_on][1].get_lnlikelihood(samples_current_stripped)/Ts[j]
-            #if bubba_lubba != 0.0:
-            #    print("Bubba rn_switch")
-            #    print(j)
-            #    print(bubba_lubba)
-            #    print(log_likelihood[j,i]/Ts[j], ptas[n_source][gwb_on][1].get_lnlikelihood(samples_current_stripped)/Ts[j])
             log_acc_ratio += -log_likelihood[j,i]*betas[j,i]
             log_acc_ratio += -ptas[n_source][gwb_on][1].get_lnprior(samples_current_stripped)
 
@@ -791,42 +718,19 @@ def rn_switch_move(n_chain, max_n_source, ptas, samples, i, betas, a_yes, a_no, 
                 gamma_proposal_old = ptas[n_source][gwb_on][1].params[n_source*7+num_per_psr_params].get_pdf(old_gamma)
                 acc_ratio *= gamma_proposal_old
     
-            #if j==0:
-            #    print('- -')
-            #    print(samples_current)
-            #    print(new_point)
-            #    print(n_source*7+num_noise_params-2, n_source*7+num_noise_params)
-            #    print(np.delete(new_point, range(n_source*7+num_noise_params-2, n_source*7+num_noise_params)))
-            #    print(old_log_amp)
-            #    print(old_gamma)
-            #    print(np.exp(log_acc_ratio))
-            #    #print(amp_proposal_old)
-            #    #print(gamma_proposal_old)
-
-            #if j==0:
-            #    print(acc_ratio)
-            
             #apply on/off prior
-            #acc_ratio *= (1-rn_on_prior)/rn_on_prior
             acc_ratio *= rn_gwb_on_prior[gwb_on,0]/rn_gwb_on_prior[gwb_on,1]
 
-            #if j==0: print(acc_ratio)
             if np.random.uniform()<=acc_ratio:
-                #if j==0: print('wooooow')
                 samples[j,i+1,:] = np.copy(new_point)
-                #if j==0:
-                #    print(samples[j,i,:])
-                #    print(samples[j,i+1,:])
                 a_yes[2,j] += 1
                 log_likelihood[j,i+1] = log_L
             else:
-                #if j==0: print("Neh")
                 samples[j,i+1,:] = samples[j,i,:]
                 a_no[2,j] += 1
                 log_likelihood[j,i+1] = log_likelihood[j,i]
         #turning on ----------------------------------------------------------------------------------------------------------
         else:
-            #if j==0: print("Turn on")
             samples_current = np.copy(samples[j,i,:])
             new_point = np.copy(samples[j,i,:])
             
@@ -846,25 +750,12 @@ def rn_switch_move(n_chain, max_n_source, ptas, samples, i, betas, a_yes, a_no, 
             else:
                 new_point[1+max_n_source*7+num_per_psr_params] = new_log_amp
 
-            #change RN amplitude to help acceptance
-            #new_point[n_source*7+num_noise_params-1] = ptas[n_source][0][1].params[n_source*7+num_noise_params-1].sample()
-
-            #if j==0: print(samples_current,new_point)
-            #if j==0: print(ptas[n_source][1][1].get_lnlikelihood(new_point)/Ts[j], ptas[n_source][1][1].get_lnprior(new_point), -ptas[n_source][0][1].get_lnlikelihood(samples_current)/Ts[j], -ptas[n_source][0][1].get_lnprior(samples_current))
-
             new_point_stripped = strip_samples(new_point,n_source,1,gwb_on,max_n_source,num_per_psr_params,num_noise_params,num_params)
             samples_current_stripped = strip_samples(samples_current,n_source,0,gwb_on,max_n_source,num_per_psr_params,num_noise_params,num_params)
 
             log_L = ptas[n_source][gwb_on][1].get_lnlikelihood(new_point_stripped)
             log_acc_ratio = log_L*betas[j,i]
             log_acc_ratio += ptas[n_source][gwb_on][1].get_lnprior(new_point_stripped)
-            #log_acc_ratio += -ptas[n_source][gwb_on][0].get_lnlikelihood(np.delete(samples_current, range(n_source*7+num_per_psr_params, n_source*7+num_noise_params)))/Ts[j]
-            #bubba_lubba = log_likelihood[j,i]/Ts[j] -ptas[n_source][gwb_on][0].get_lnlikelihood(samples_current_stripped)/Ts[j]
-            #if bubba_lubba != 0.0:
-            #    print("Bubba rn_switch")
-            #    print(j)
-            #    print(bubba_lubba)
-            #    print(log_likelihood[j,i]/Ts[j], ptas[n_source][gwb_on][0].get_lnlikelihood(samples_current_stripped)/Ts[j])
             log_acc_ratio += -log_likelihood[j,i]*betas[j,i]
             log_acc_ratio += -ptas[n_source][gwb_on][0].get_lnprior(samples_current_stripped)
 
@@ -875,33 +766,14 @@ def rn_switch_move(n_chain, max_n_source, ptas, samples, i, betas, a_yes, a_no, 
                 gamma_proposal_new = ptas[n_source][gwb_on][1].params[n_source*7+num_per_psr_params].get_pdf(new_gamma)
                 acc_ratio *= 1/gamma_proposal_new
 
-            #if j==0:
-            #    print("+ +")
-            #    print(samples_current)
-            #    print(new_point)
-            #    print(n_source*7+num_noise_params-2, n_source*7+num_noise_params)
-            #    print(np.delete(samples_current, range(n_source*7+num_noise_params-2, n_source*7+num_noise_params)))
-            #    print(np.exp(log_acc_ratio))
-            #    #print(amp_proposal_new)
-            #    #print(gamma_proposal_new)
-
-            #if j==0:
-            #    print(acc_ratio)
-            
             #apply on/off prior
-            #acc_ratio *= rn_on_prior/(1-rn_on_prior)
             acc_ratio *= rn_gwb_on_prior[gwb_on,1]/rn_gwb_on_prior[gwb_on,0]
-            #if j==0: print(acc_ratio)
+            
             if np.random.uniform()<=acc_ratio:
-                #if j==0: print('yeeee')
                 samples[j,i+1,:] = np.copy(new_point)
-                #if j==0:
-                #    print(samples[j,i,:])
-                #    print(samples[j,i+1,:])
                 a_yes[2,j] += 1
                 log_likelihood[j,i+1] = log_L
             else:
-                #if j==0: print("Meh")
                 samples[j,i+1,:] = samples[j,i,:]
                 a_no[2,j] += 1
                 log_likelihood[j,i+1] = log_likelihood[j,i]
@@ -922,7 +794,6 @@ def gwb_switch_move(n_chain, max_n_source, ptas, samples, i, betas, a_yes, a_no,
         
         #turning off ---------------------------------------------------------------------------------------------------------
         if gwb_on==1:
-            #if j==0: print("Turn off")
             samples_current = np.copy(samples[j,i,:])
             new_point = np.copy(samples[j,i,:])
             if vary_gwb_gamma:
@@ -940,26 +811,12 @@ def gwb_switch_move(n_chain, max_n_source, ptas, samples, i, betas, a_yes, a_no,
             else:
                 new_point[1+max_n_source*7+num_noise_params] = 0.0
 
-            #change RN amplitude to help acceptance
-            #if np.random.uniform()<=0.5:
-            #    new_point[n_source*7+num_noise_params-1] = ptas[n_source][0][1].params[n_source*7+num_noise_params-1].sample()
-
-            #if j==0: print(samples_current, new_point)
-            #if j==0: print(ptas[n_source][0][1].get_lnlikelihood(new_point)/Ts[j], ptas[n_source][0][1].get_lnprior(new_point), -ptas[n_source][1][1].get_lnlikelihood(samples_current)/Ts[j], -ptas[n_source][1][1].get_lnprior(samples_current))
-
             new_point_stripped = strip_samples(new_point,n_source,rn_on,0,max_n_source,num_per_psr_params,num_noise_params,num_params)
             samples_current_stripped = strip_samples(samples_current,n_source,rn_on,1,max_n_source,num_per_psr_params,num_noise_params,num_params)
 
             log_L = ptas[n_source][0][rn_on].get_lnlikelihood(new_point_stripped)
             log_acc_ratio = log_L*betas[j,i]
             log_acc_ratio += ptas[n_source][0][rn_on].get_lnprior(new_point_stripped)
-            #log_acc_ratio += -ptas[n_source][1][rn_on].get_lnlikelihood(samples_current)/Ts[j]
-            #bubba_lubba = log_likelihood[j,i]/Ts[j] -ptas[n_source][1][rn_on].get_lnlikelihood(samples_current_stripped)/Ts[j]
-            #if bubba_lubba != 0.0:
-            #    print("Bubba gwb_switch")
-            #    print(j)
-            #    print(bubba_lubba)
-            #    print(log_likelihood[j,i]/Ts[j], ptas[n_source][1][rn_on].get_lnlikelihood(samples_current_stripped)/Ts[j])
             log_acc_ratio += -log_likelihood[j,i]*betas[j,i]
             log_acc_ratio += -ptas[n_source][1][rn_on].get_lnprior(samples_current_stripped)
 
@@ -970,11 +827,9 @@ def gwb_switch_move(n_chain, max_n_source, ptas, samples, i, betas, a_yes, a_no,
                 acc_ratio *= gamma_proposal_old
 
             #apply on/off prior
-            #acc_ratio *= (1-gwb_on_prior)/gwb_on_prior
             acc_ratio *= rn_gwb_on_prior[0,rn_on]/rn_gwb_on_prior[1,rn_on]
-            #if j==0: print(acc_ratio)
+            
             if np.random.uniform()<=acc_ratio:
-                #if j==0: print('wooooow')
                 samples[j,i+1,:] = np.copy(new_point)
                 a_yes[1,j] += 1
                 log_likelihood[j,i+1] = log_L
@@ -1004,25 +859,12 @@ def gwb_switch_move(n_chain, max_n_source, ptas, samples, i, betas, a_yes, a_no,
             else:
                 new_point[1+max_n_source*7+num_noise_params] = new_log_amp
 
-            #change RN amplitude to help acceptance
-            #new_point[n_source*7+num_noise_params-1] = ptas[n_source][0][1].params[n_source*7+num_noise_params-1].sample()
-
-            #if j==0: print(samples_current,new_point)
-            #if j==0: print(ptas[n_source][1][1].get_lnlikelihood(new_point)/Ts[j], ptas[n_source][1][1].get_lnprior(new_point), -ptas[n_source][0][1].get_lnlikelihood(samples_current)/Ts[j], -ptas[n_source][0][1].get_lnprior(samples_current))
-
             new_point_stripped = strip_samples(new_point,n_source,rn_on,1,max_n_source,num_per_psr_params,num_noise_params,num_params)
             samples_current_stripped = strip_samples(samples_current,n_source,rn_on,0,max_n_source,num_per_psr_params,num_noise_params,num_params)
 
             log_L = ptas[n_source][1][rn_on].get_lnlikelihood(new_point_stripped)
             log_acc_ratio = log_L*betas[j,i]
             log_acc_ratio += ptas[n_source][1][rn_on].get_lnprior(new_point_stripped)
-            #log_acc_ratio += -ptas[n_source][0][rn_on].get_lnlikelihood(samples_current)/Ts[j]
-            #bubba_lubba = log_likelihood[j,i]/Ts[j] -ptas[n_source][0][rn_on].get_lnlikelihood(samples_current_stripped)/Ts[j]
-            #if bubba_lubba != 0.0:
-            #    print("Bubba gwb_switch")
-            #    print(j)
-            #    print(bubba_lubba)
-            #    print(log_likelihood[j,i]/Ts[j], ptas[n_source][0][rn_on].get_lnlikelihood(samples_current_stripped)/Ts[j])
             log_acc_ratio += -log_likelihood[j,i]*betas[j,i]
             log_acc_ratio += -ptas[n_source][0][rn_on].get_lnprior(samples_current_stripped)
 
@@ -1033,11 +875,9 @@ def gwb_switch_move(n_chain, max_n_source, ptas, samples, i, betas, a_yes, a_no,
                 acc_ratio *= 1/gamma_proposal_new
 
             #apply on/off prior
-            #acc_ratio *= gwb_on_prior/(1-gwb_on_prior)
             acc_ratio *= rn_gwb_on_prior[1,rn_on]/rn_gwb_on_prior[0,rn_on]
-            #if j==0: print(acc_ratio)
+            
             if np.random.uniform()<=acc_ratio:
-                #if j==0: print('yeeee')
                 samples[j,i+1,:] = np.copy(new_point)
                 a_yes[1,j] += 1
                 log_likelihood[j,i+1] = log_L
@@ -1106,7 +946,6 @@ def do_rj_move(n_chain, max_n_source, n_source_prior, ptas, samples, i, betas, a
             #log10_h = np.log10(h_max[f_idx, hp_idx]) + 2*alpha*(np.random.uniform()-0.5)
 
             samples_current = np.copy(samples[j,i,:])
-            #print(samples_current)
             
             new_point = np.copy(samples[j,i,:])
             new_source = np.array([np.cos(gw_theta), cos_inc, gw_phi, log_f_new, log10_h, phase0, psi])
@@ -1119,13 +958,6 @@ def do_rj_move(n_chain, max_n_source, n_source_prior, ptas, samples, i, betas, a
             log_L = ptas[(n_source+1)][gwb_on][rn_on].get_lnlikelihood(new_point_stripped)
             log_acc_ratio = log_L*betas[j,i]
             log_acc_ratio += ptas[(n_source+1)][gwb_on][rn_on].get_lnprior(new_point_stripped)
-            #log_acc_ratio += -ptas[n_source][gwb_on][rn_on].get_lnlikelihood(samples_current)/Ts[j]
-            #bubba_lubba = log_likelihood[j,i]/Ts[j] -ptas[n_source][gwb_on][rn_on].get_lnlikelihood(samples_current_stripped)/Ts[j]
-            #if bubba_lubba != 0.0:
-            #    print("Bubba do_rj")
-            #    print(j)
-            #    print(bubba_lubba)
-            #    print(log_likelihood[j,i]/Ts[j], ptas[n_source][gwb_on][rn_on].get_lnlikelihood(samples_current_stripped)/Ts[j])
             log_acc_ratio += -log_likelihood[j,i]*betas[j,i]
             log_acc_ratio += -ptas[n_source][gwb_on][rn_on].get_lnprior(samples_current_stripped)
 
@@ -1149,6 +981,7 @@ def do_rj_move(n_chain, max_n_source, n_source_prior, ptas, samples, i, betas, a
                 acc_ratio *= 2.0
             #accounting for n_source prior
             acc_ratio *= n_source_prior[int(n_source)+1]/n_source_prior[int(n_source)]
+            
             if np.random.uniform()<=acc_ratio:
                 samples[j,i+1,:] = np.copy(new_point)
                 a_yes[0,j] += 1
@@ -1158,7 +991,6 @@ def do_rj_move(n_chain, max_n_source, n_source_prior, ptas, samples, i, betas, a
                 a_no[0,j] += 1
                 log_likelihood[j,i+1] = log_likelihood[j,i]
 
-           
         elif n_source==max_n_source or (direction_decide>add_prob and n_source!=0):   #removing a signal----------------------------------------------------------
             if j==0: rj_record.append(-1)
             #choose which source to remove
@@ -1171,13 +1003,6 @@ def do_rj_move(n_chain, max_n_source, n_source_prior, ptas, samples, i, betas, a
             log_L = ptas[(n_source-1)][gwb_on][rn_on].get_lnlikelihood(new_point_stripped)
             log_acc_ratio = log_L*betas[j,i]
             log_acc_ratio += ptas[(n_source-1)][gwb_on][rn_on].get_lnprior(new_point_stripped)
-            #log_acc_ratio += -ptas[n_source][gwb_on][rn_on].get_lnlikelihood(samples_current)/Ts[j]
-            #bubba_lubba = log_likelihood[j,i]/Ts[j] -ptas[n_source][gwb_on][rn_on].get_lnlikelihood(samples_current_stripped)/Ts[j]
-            #if bubba_lubba != 0.0:
-            #    print("Bubba do_rj")
-            #    print(j)
-            #    print(bubba_lubba)
-            #    print(log_likelihood[j,i]/Ts[j], ptas[n_source][gwb_on][rn_on].get_lnlikelihood(samples_current_stripped)/Ts[j])
             log_acc_ratio += -log_likelihood[j,i]*betas[j,i]
             log_acc_ratio += -ptas[n_source][gwb_on][rn_on].get_lnprior(samples_current_stripped)
             
@@ -1217,6 +1042,7 @@ def do_rj_move(n_chain, max_n_source, n_source_prior, ptas, samples, i, betas, a
                 acc_ratio *= 0.5
             #accounting for n_source prior
             acc_ratio *= n_source_prior[int(n_source)-1]/n_source_prior[int(n_source)]
+            
             if np.random.uniform()<=acc_ratio:
                 samples[j,i+1,0] = n_source-1
                 samples[j,i+1,1:(n_source-1)*7+1] = new_point_stripped[:(n_source-1)*7]
@@ -1235,7 +1061,6 @@ def do_rj_move(n_chain, max_n_source, n_source_prior, ptas, samples, i, betas, a
 ################################################################################
 def do_fe_global_jump(n_chain, max_n_source, ptas, samples, i, betas, a_yes, a_no, freqs, fe, inc_max, psi_max, phase0_max, h_max, vary_white_noise, include_gwb, num_params, num_noise_params, num_per_psr_params, Fe_pdet, Fe_alpha, psi_pdf, cos_inc_pdf, phase0_pdf, log_h_pdf, log_likelihood):
     #print("Fe")
-    #ndim = n_source*7
        
     #set probability of deterministic vs flat proposal in extrinsic parameters
     p_det = Fe_pdet
@@ -1248,11 +1073,6 @@ def do_fe_global_jump(n_chain, max_n_source, ptas, samples, i, betas, a_yes, a_n
     #if fe_limit>200:
     #    fe_limit=200
 
-    #print("PDF_max_cos_inc(0.25) = ",cos_inc_pdf(0.25))
-    #print("PDF_max_psi(1.0) = ",psi_pdf(1.0))
-    #print("PDF_max_phase0(5.0) = ",phase0_pdf(5.0))
-    #print("PDF_max_log_h(-14) = ",log_h_pdf(-14))
-    
     for j in range(n_chain):
         #check if there's any source -- stay at given point of not
         n_source = get_n_source(samples,j,i)
@@ -1304,14 +1124,10 @@ def do_fe_global_jump(n_chain, max_n_source, ptas, samples, i, betas, a_yes, a_n
 
         #choose randomly which source to change
         source_select = np.random.randint(n_source)
-        #print(source_select)
-        #print(samples[j,i,:])
         samples_current = np.copy(samples[j,i,:])
-        #print(samples_current)
         new_point = np.copy(samples[j,i,:])
         new_point[1+source_select*7:1+(source_select+1)*7] = np.array([np.cos(gw_theta), cos_inc, gw_phi, log_f_new,
                                                                                log10_h, phase0, psi])
-        #print(new_point)
         if fe_new_point>fe_limit:
             fe_new_point=fe_limit        
         
@@ -1321,13 +1137,6 @@ def do_fe_global_jump(n_chain, max_n_source, ptas, samples, i, betas, a_yes, a_n
         log_L = ptas[n_source][gwb_on][rn_on].get_lnlikelihood(new_point_stripped)
         log_acc_ratio = log_L*betas[j,i]
         log_acc_ratio += ptas[n_source][gwb_on][rn_on].get_lnprior(new_point_stripped)
-        #log_acc_ratio += -ptas[n_source][gwb_on][rn_on].get_lnlikelihood(samples_current)/Ts[j]
-        #bubba_lubba = log_likelihood[j,i]/Ts[j] -ptas[n_source][gwb_on][rn_on].get_lnlikelihood(samples_current_stripped)/Ts[j]
-        #if bubba_lubba != 0.0:
-        #    print("Bubba fe_global")
-        #    print(j)
-        #    print(bubba_lubba)
-        #    print(log_likelihood[j,i]/Ts[j], ptas[n_source][gwb_on][rn_on].get_lnlikelihood(samples_current_stripped)/Ts[j])
         log_acc_ratio += -log_likelihood[j,i]*betas[j,i]
         log_acc_ratio += -ptas[n_source][gwb_on][rn_on].get_lnprior(samples_current_stripped)
 
@@ -1367,28 +1176,20 @@ def do_fe_global_jump(n_chain, max_n_source, ptas, samples, i, betas, a_yes, a_n
             #for new params
             upper_diff_new = upper_pb - new_param_fe
             lower_diff_new = new_param_fe - lower_pb
-            #print('-'*10)
-            #print(new_param_fe)
-            #print(upper_diff_new, lower_diff_new)
             if np.abs(upper_diff_new)<alpha:
                 prior_det_new = 1/(alpha+upper_diff_new)
-                #print("new hit upper")
             elif np.abs(lower_diff_new)<alpha:
                 prior_det_new = 1/(alpha+lower_diff_new)
-                #print("new hit lower")
             else:
                 prior_det_new = 1/(2*alpha)
 
             #for old params
             upper_diff_old = upper_pb - old_param_fe
             lower_diff_old = old_param_fe - lower_pb
-            #print(upper_diff_old, lower_diff_old)
             if np.abs(upper_diff_old)<alpha:
                 prior_det_old = 1/(alpha+upper_diff_old)
-                #print("old hit upper")
             elif np.abs(lower_diff_old)<alpha:
                 prior_det_old = 1/(alpha+lower_diff_old)
-                #print("old hit lower")
             else:
                 prior_det_old = 1/(2*alpha)
 
@@ -1402,8 +1203,6 @@ def do_fe_global_jump(n_chain, max_n_source, ptas, samples, i, betas, a_yes, a_n
             prior_new = ptas[n_source][gwb_on][1].params[k].get_pdf(new_param)
             
             #probability that it was put there as deterministic given that it's in a deterministic place
-            #p_det_indet_old = p_det/(p_det + (1-p_det)*prior_old/prior_det_old )
-            #print("p(det| in det)= ", p_det_indet_old)
             if det_new and not det_old: #from non-det to det
                 hastings_extra_factor *= prior_old / ( (1-p_det)*prior_new + p_det*prior_det_new*ext_pdf(new_param) ) 
             elif not det_new and det_old: #from det to non-det
@@ -1414,7 +1213,7 @@ def do_fe_global_jump(n_chain, max_n_source, ptas, samples, i, betas, a_yes, a_n
                 hastings_extra_factor *= prior_old / prior_new
 
         acc_ratio = np.exp(log_acc_ratio)*(fe_old_point/fe_new_point)*hastings_extra_factor
-        #not needed (most likely): samples[j,i+1,n_source*7+1:] = np.zeros((max_n_source-n_source)*7)
+        
         if np.random.uniform()<=acc_ratio:
             samples[j,i+1,:] = np.copy(new_point)
             a_yes[5,j]+=1
@@ -1471,8 +1270,6 @@ def regular_jump(n_chain, max_n_source, ptas, samples, i, betas, a_yes, a_no, ei
             jump_select = np.random.randint(7)
             jump_1source = eig[j,source_select,jump_select,:]
             jump = np.array([jump_1source[int(i-1-source_select*7)] if i>=1+source_select*7 and i<1+(source_select+1)*7 else 0.0 for i in range(samples_current.size)])
-            #print('cw')
-            #print(jump)
         elif what_to_vary == 'GWB':
             num_gwb_params = 1
             num_rn_params = 1
@@ -1494,19 +1291,7 @@ def regular_jump(n_chain, max_n_source, ptas, samples, i, betas, a_yes, a_no, ei
                 jump_gwb[1] = 0
                 jump = np.array([jump_gwb[int(i-1-max_n_source*7-num_per_psr_params)] if i>=1+max_n_source*7+num_per_psr_params and i<1+max_n_source*7+num_noise_params+num_gwb_params else 0.0 for i in range(samples_current.size)])
 
-            #if j==0: print('gwb+rn')
-            #if j==0: print(i)
-            #if j==0: print(jump)
-        
         new_point = samples_current + jump*np.random.normal()
-        #Try draw from prior in RN sometimes
-        #draw_prior_fraction = 0.25
-        #if np.random.uniform()<=draw_prior_fraction:
-        #    new_point[n_source*7+len(ptas[n_source][gwb_on][1].pulsars):n_source*7+len(ptas[n_source][gwb_on][1].pulsars)+2] = np.hstack(p.sample() for p in ptas[n_source][gwb_on][1].params[n_source*7+len(ptas[n_source][gwb_on][1].pulsars):n_source*7+num_noise_params])
-        #    if j==0: print(new_point)
-
-        #if j==0:
-        #    print(new_point)
 
         new_point_stripped = strip_samples(new_point,n_source,rn_on,gwb_on,max_n_source,num_per_psr_params,num_noise_params,num_params)
         samples_current_stripped = strip_samples(samples_current,n_source,rn_on,gwb_on,max_n_source,num_per_psr_params,num_noise_params,num_params)
@@ -1514,20 +1299,12 @@ def regular_jump(n_chain, max_n_source, ptas, samples, i, betas, a_yes, a_no, ei
         log_L = ptas[n_source][gwb_on][rn_on].get_lnlikelihood(new_point_stripped)
         log_acc_ratio = log_L*betas[j,i]
         log_acc_ratio += ptas[n_source][gwb_on][rn_on].get_lnprior(new_point_stripped)
-        #log_acc_ratio += -ptas[n_source][gwb_on][rn_on].get_lnlikelihood(samples_current)/Ts[j]
-        #bubba_lubba = log_likelihood[j,i]/Ts[j] -ptas[n_source][gwb_on][rn_on].get_lnlikelihood(samples_current_stripped)/Ts[j]
-        #if bubba_lubba != 0.0:
-        #    print("Bubba regular")
-        #    print(j)
-        #    print(bubba_lubba)
-        #    print(log_likelihood[j,i]/Ts[j], ptas[n_source][gwb_on][rn_on].get_lnlikelihood(samples_current_stripped)/Ts[j])
         log_acc_ratio += -log_likelihood[j,i]*betas[j,i]
         log_acc_ratio += -ptas[n_source][gwb_on][rn_on].get_lnprior(samples_current_stripped)
 
         acc_ratio = np.exp(log_acc_ratio)
-        #if j==0: print(acc_ratio)
+        
         if np.random.uniform()<=acc_ratio:
-            #if j==0: print("ohh jeez")
             samples[j,i+1,:] = np.copy(new_point)
             a_yes[6,j]+=1
             log_likelihood[j,i+1] = log_L
@@ -1557,14 +1334,8 @@ def noise_jump(n_chain, max_n_source, ptas, samples, i, betas, a_yes, a_no, eig_
         
         #do the wn jump
         jump_select = np.random.randint(eig_per_psr.shape[1])
-        #if j==0:
-        #    print(eig_per_psr.shape[1])
-        #    print(jump_select)
         jump_wn = eig_per_psr[j,jump_select,:]
         jump = np.array([jump_wn[int(i-1-max_n_source*7)] if i>=1+max_n_source*7 and i<1+max_n_source*7+eig_per_psr.shape[1] else 0.0 for i in range(samples_current.size)])
-        #if j==0: print('noise')
-        #if j==0:
-        #    print(jump)
 
         new_point = samples_current + jump*np.random.normal()
 
@@ -1574,20 +1345,12 @@ def noise_jump(n_chain, max_n_source, ptas, samples, i, betas, a_yes, a_no, eig_
         log_L = ptas[n_source][gwb_on][rn_on].get_lnlikelihood(new_point_stripped)
         log_acc_ratio = log_L*betas[j,i]
         log_acc_ratio += ptas[n_source][gwb_on][rn_on].get_lnprior(new_point_stripped)
-        #log_acc_ratio += -ptas[n_source][gwb_on][rn_on].get_lnlikelihood(samples_current)/Ts[j]
-        #bubba_lubba = log_likelihood[j,i]/Ts[j] -ptas[n_source][gwb_on][rn_on].get_lnlikelihood(samples_current_stripped)/Ts[j]
-        #if bubba_lubba != 0.0:
-        #    print("Bubba noise")
-        #    print(j)
-        #    print(bubba_lubba)
-        #    print(log_likelihood[j,i]/Ts[j], ptas[n_source][gwb_on][rn_on].get_lnlikelihood(samples_current_stripped)/Ts[j])
         log_acc_ratio += -log_likelihood[j,i]*betas[j,i]
         log_acc_ratio += -ptas[n_source][gwb_on][rn_on].get_lnprior(samples_current_stripped)
 
         acc_ratio = np.exp(log_acc_ratio)
-        #if j==0: print(acc_ratio)
+        
         if np.random.uniform()<=acc_ratio:
-            #if j==0: print("Ohhhh")
             samples[j,i+1,:] = np.copy(new_point)
             a_yes[7,j]+=1
             log_likelihood[j,i+1] = log_L
