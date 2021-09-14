@@ -1566,6 +1566,7 @@ def get_prior_recovery_pta(pta):
         def __init__(self, pta):
             self.pta = pta
             self.params = pta.params
+            self.param_names = pta.param_names
             self.pulsars = pta.pulsars
         def get_lnlikelihood(self, x):
             return 0.0
