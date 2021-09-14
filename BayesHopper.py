@@ -1030,6 +1030,8 @@ def do_rj_move(n_chain, max_n_source, n_source_prior, ptas, samples, i, betas, a
                 else:
                     new_point[par_names.index(str(int(par_name[0])-1)+par_name[1:])] = np.copy(samples_current[par_names.index(par_name)])
 
+            new_point[par_names.index('n_source')] = n_source-1
+
             #print(remove_index)
             #print(samples_current)
             #print(new_point)
