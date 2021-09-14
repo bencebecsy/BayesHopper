@@ -439,7 +439,7 @@ Fe-proposals: {1:.2f}%\nJumps along Fisher eigendirections: {2:.2f}%\nNoise jump
         #
         ########################################################
         if savefile is not None and i%save_every_n==0 and i!=start_iter:
-            np.savez(savefile, samples=samples[:,:i,:], acc_fraction=acc_fraction, swap_record=swap_record, log_likelihood=log_likelihood[:,:i],
+            np.savez(savefile, samples=samples[:,:i,:], par_names=par_names, acc_fraction=acc_fraction, swap_record=swap_record, log_likelihood=log_likelihood[:,:i],
                      betas=betas[:,:i], PT_acc=PT_acc[:,:i])
         ########################################################
         #
