@@ -51,7 +51,7 @@ def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, n_source_prior='flat'
                 print(i, j, k)
                 print(ptas[i][j][k].params)
                 #point_to_test = np.tile(np.array([0.0, 0.54, 1.0, -8.0, -13.39, 2.0, 0.5]),i+1)
-                #print(PTA.summary())
+                #print(ptas[i][j][k].summary())
 
     #generate list of parameters as they appear in the columns of samples
     #also make groups of parameters of different parts of the model
@@ -69,16 +69,28 @@ def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, n_source_prior='flat'
         par_names.append(str(n)+'_'+'gwphi')
         par_names.append(str(n)+'_'+'log10_fgw')
         par_names.append(str(n)+'_'+'log10_h')
+        if include_psr_term:
+            par_names.append(str(n)+'_'+'log10_mc')
         par_names.append(str(n)+'_'+'phase0')
         par_names.append(str(n)+'_'+'psi')
+        if include_psr_term:
+            for psr in pulsars:
+                par_names.append(psr.name+'_'+'cw'+str(n)+'_p_dist')
+                par_names.append(psr.name+'_'+'cw'+str(n)+'_p_phase')
         par_names_cws.append([])
         par_names_cws[n].append(str(n)+'_'+'cos_gwtheta')
         par_names_cws[n].append(str(n)+'_'+'cos_inc')
         par_names_cws[n].append(str(n)+'_'+'gwphi')
         par_names_cws[n].append(str(n)+'_'+'log10_fgw')
         par_names_cws[n].append(str(n)+'_'+'log10_h')
+        if include_psr_term:
+            par_names_cws[n].append(str(n)+'_'+'log10_mc')
         par_names_cws[n].append(str(n)+'_'+'phase0')
         par_names_cws[n].append(str(n)+'_'+'psi')
+        if include_psr_term:
+            for psr in pulsars:
+                par_names_cws[n].append(psr.name+'_'+'cw'+str(n)+'_p_dist')
+                par_names_cws[n].append(psr.name+'_'+'cw'+str(n)+'_p_phase')
     #per psr parameters
     if vary_white_noise and vary_per_psr_rn:
         for psr in pulsars:
@@ -245,6 +257,10 @@ def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, n_source_prior='flat'
             for n in range(n_source):
                 for cw_par in par_names_cws[n]:
                     samples[j,0,par_names.index(cw_par)] = ptas[-1][-1][-1].params[ptas[-1][-1][-1].param_names.index(cw_par)].sample()
+                #force pulsar distance to be the same for all CW sources (kludge since we can't set up PTA so that those are a single parameter)
+                if n>0 and include_psr_term:
+                    for psr in pulsars:
+                        samples[j,0,par_names.index(psr.name+'_'+'cw'+str(n)+'_p_dist')] = np.copy(samples[j,0,par_names.index(psr.name+'_'+'cw0_p_dist')])
 
             #draw per_psr parameters
             for per_psr_par in par_names_per_psr:
@@ -274,7 +290,7 @@ def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, n_source_prior='flat'
 
     #setting up array for the fisher eigenvalues
     #one for cw parameters which we will keep updating
-    eig = np.ones((n_chain, max_n_source, 7, 7))*0.1
+    eig = np.ones((n_chain, max_n_source, len(par_names_cws[0]), len(par_names_cws[0])))*0.1
     
     #one for GWB and common rn parameters, which we will keep updating
     if include_gwb:
@@ -502,10 +518,10 @@ Fe-proposals: {1:.2f}%\nJumps along Fisher eigendirections: {2:.2f}%\nNoise jump
             do_pt_swap(n_chain, ptas, samples, i, betas, a_yes, a_no, swap_record, log_likelihood, PT_hist, PT_hist_idx)
         #global proposal based on Fe-statistic
         elif jump_decide<swap_probability+fe_proposal_probability:
-            do_fe_global_jump(n_chain, max_n_source, ptas, samples, i, betas, a_yes, a_no, freqs, fe, inc_max, psi_max, phase0_max, h_max, Fe_pdet, Fe_alpha, psi_pdf, cos_inc_pdf, phase0_pdf, log_h_pdf, par_names, par_names_crn, par_names_gwb, log_likelihood)
+            do_fe_global_jump(n_chain, max_n_source, ptas, samples, i, betas, a_yes, a_no, freqs, fe, inc_max, psi_max, phase0_max, h_max, Fe_pdet, Fe_alpha, psi_pdf, cos_inc_pdf, phase0_pdf, log_h_pdf, par_names, par_names_crn, par_names_gwb, include_psr_term, log_likelihood)
         #do RJ move
         elif (jump_decide<swap_probability+fe_proposal_probability+RJ_probability):
-            do_rj_move(n_chain, max_n_source, n_source_prior, ptas, samples, i, betas, a_yes, a_no, freqs, fe, inc_max, psi_max, phase0_max, h_max, rj_record, par_names, par_names_cws, par_names_crn, par_names_gwb, log_likelihood)
+            do_rj_move(n_chain, max_n_source, n_source_prior, ptas, samples, i, betas, a_yes, a_no, freqs, fe, inc_max, psi_max, phase0_max, h_max, rj_record, par_names, par_names_cws, par_names_crn, par_names_gwb, include_psr_term, log_likelihood)
         #do GWB switch move
         elif (jump_decide<swap_probability+fe_proposal_probability+RJ_probability+gwb_switch_probability):
             gwb_switch_move(n_chain, ptas, samples, i, betas, a_yes, a_no, include_gwb, rn_gwb_on_prior, gwb_log_amp_range, vary_gwb_gamma, par_names, par_names_crn, par_names_gwb, log_likelihood)
@@ -520,7 +536,7 @@ Fe-proposals: {1:.2f}%\nJumps along Fisher eigendirections: {2:.2f}%\nNoise jump
             rn_gwb_move(n_chain, ptas, samples, i, betas, a_yes, a_no, include_rn, include_gwb, rn_gwb_on_prior, vary_rn_gamma, vary_gwb_gamma, par_names, par_names_crn, par_names_gwb, log_likelihood)
         #regular step
         else:
-            regular_jump(n_chain, ptas, samples, i, betas, a_yes, a_no, eig, eig_gwb_rn, par_names, par_names_cws, par_names_crn, par_names_gwb, log_likelihood)
+            regular_jump(n_chain, ptas, samples, i, betas, a_yes, a_no, eig, eig_gwb_rn, par_names, par_names_cws, par_names_crn, par_names_gwb, include_psr_term, log_likelihood)
     
     acc_fraction = a_yes/(a_no+a_yes)
     return samples, par_names, acc_fraction, swap_record, rj_record, ptas, log_likelihood, betas, PT_acc
@@ -911,7 +927,7 @@ def gwb_switch_move(n_chain, ptas, samples, i, betas, a_yes, a_no, include_gwb, 
 #REVERSIBLE-JUMP (RJ, aka TRANS-DIMENSIONAL) MOVE
 #
 ################################################################################
-def do_rj_move(n_chain, max_n_source, n_source_prior, ptas, samples, i, betas, a_yes, a_no, freqs, fe, inc_max, psi_max, phase0_max, h_max, rj_record, par_names, par_names_cws, par_names_crn, par_names_gwb, log_likelihood):
+def do_rj_move(n_chain, max_n_source, n_source_prior, ptas, samples, i, betas, a_yes, a_no, freqs, fe, inc_max, psi_max, phase0_max, h_max, rj_record, par_names, par_names_cws, par_names_crn, par_names_gwb, include_psr_term, log_likelihood):
     #print("RJ")
     for j in range(n_chain):
         n_source = get_n_source(samples,j,i)
@@ -956,7 +972,26 @@ def do_rj_move(n_chain, max_n_source, n_source_prior, ptas, samples, i, betas, a
                          ptas[1][0][0].params[ptas[1][0][0].param_names.index('0_psi')].get_pdf(psi) *
                          ptas[1][0][0].params[ptas[1][0][0].param_names.index('0_phase0')].get_pdf(phase0) *
                          ptas[1][0][0].params[ptas[1][0][0].param_names.index('0_log10_h')].get_pdf(log10_h))
-            
+
+            if include_psr_term:
+                log10_mc = ptas[1][0][0].params[ptas[1][0][0].param_names.index('0_log10_mc')].sample()
+                p_phases = []
+                for psr_name in ptas[0][0][0].pulsars:
+                    p_phases.append(np.random.uniform(low=0.0, high=2*np.pi))
+                p_dists = []
+                if n_source>0:
+                    for psr_name in ptas[0][0][0].pulsars:
+                        p_dists.append(samples[j,i,par_names.index(psr_name+'_'+'cw0_p_dist')])
+                else:
+                    for psr_name in ptas[0][0][0].pulsars:
+                        p_dists.append(ptas[1][0][0].params[ptas[1][0][0].param_names.index(psr_name+'_'+'cw0_p_dist')].sample())
+
+                prior_ext *= ptas[1][0][0].params[ptas[1][0][0].param_names.index('0_log10_mc')].get_pdf(log10_mc)
+                for psr_idx, psr_name in enumerate(ptas[0][0][0].pulsars):
+                    prior_ext *= ptas[1][0][0].params[ptas[1][0][0].param_names.index(psr_name+'_'+'cw0_p_dist')].get_pdf(p_dists[psr_idx])
+                    prior_ext *= ptas[1][0][0].params[ptas[1][0][0].param_names.index(psr_name+'_'+'cw0_p_phase')].get_pdf(p_phases[psr_idx])
+
+
             #cos_inc = np.cos(inc_max[f_idx, hp_idx]) + 2*alpha*(np.random.uniform()-0.5)
             #psi = psi_max[f_idx, hp_idx] + 2*alpha*(np.random.uniform()-0.5)
             #phase0 = phase0_max[f_idx, hp_idx] + 2*alpha*(np.random.uniform()-0.5)
@@ -974,9 +1009,17 @@ def do_rj_move(n_chain, max_n_source, n_source_prior, ptas, samples, i, betas, a
             new_point[par_names.index(str(n_source)+'_log10_h')] = log10_h
             new_point[par_names.index(str(n_source)+'_phase0')] = phase0
             new_point[par_names.index(str(n_source)+'_psi')] = psi
+            if include_psr_term:
+                new_point[par_names.index(str(n_source)+'_log10_mc')] = log10_mc
+                for psr_idx, psr_name in enumerate(ptas[0][0][0].pulsars):
+                    new_point[par_names.index(psr_name + '_cw' + str(n_source) + '_p_phase')] = p_phases[psr_idx]
+                    new_point[par_names.index(psr_name + '_cw' + str(n_source) + '_p_dist')] = p_dists[psr_idx]
 
             new_point_dict = dict_samples(new_point,par_names,ptas[(n_source+1)][gwb_on][rn_on])
             samples_current_dict = dict_samples(samples_current,par_names,ptas[n_source][gwb_on][rn_on])
+            #if j==0:
+            #    print(samples_current)
+            #    print(new_point)
 
             log_L = ptas[(n_source+1)][gwb_on][rn_on].get_lnlikelihood(new_point_dict)
             log_acc_ratio = log_L*betas[j,i]
@@ -1026,15 +1069,23 @@ def do_rj_move(n_chain, max_n_source, n_source_prior, ptas, samples, i, betas, a
                 if par_name not in [par_names_cw for n in range(remove_index,n_source) for par_names_cw in par_names_cws[n]]:
                     new_point[par_names.index(par_name)] = np.copy(samples_current[par_names.index(par_name)])
                 elif par_name in par_names_cws[remove_index]:
-                    new_point[par_names.index(str(n_source-1)+par_name[1:])] = 0.0
+                    m = par_names_cws[remove_index].index(par_name)
+                    new_point[par_names.index(par_names_cws[n_source-1][m])] = 0.0
+                    #new_point[par_names.index(str(n_source-1)+par_name[1:])] = 0.0
                 else:
-                    new_point[par_names.index(str(int(par_name[0])-1)+par_name[1:])] = np.copy(samples_current[par_names.index(par_name)])
+                    for n in range(remove_index,n_source):
+                        if par_name in par_names_cws[n]:
+                            m = par_names_cws[n].index(par_name)
+                            new_point[par_names.index(par_names_cws[n-1][m])] = np.copy(samples_current[par_names.index(par_name)])
+                    #new_point[par_names.index(str(int(par_name[0])-1)+par_name[1:])] = np.copy(samples_current[par_names.index(par_name)])
 
             new_point[par_names.index('n_source')] = n_source-1
 
-            #print(remove_index)
-            #print(samples_current)
-            #print(new_point)
+            #if j==0:
+            #    print("-"*30)
+            #    print(remove_index)
+            #    print(samples_current)
+            #    print(new_point)
 
             samples_current_dict = dict_samples(samples_current,par_names,ptas[n_source][gwb_on][rn_on])
             new_point_dict = dict_samples(new_point,par_names,ptas[(n_source-1)][gwb_on][rn_on])
@@ -1075,6 +1126,19 @@ def do_rj_move(n_chain, max_n_source, n_source_prior, ptas, samples, i, betas, a
                          ptas[1][0][0].params[ptas[1][0][0].param_names.index('0_phase0')].get_pdf(phase0) *
                          ptas[1][0][0].params[ptas[1][0][0].param_names.index('0_log10_h')].get_pdf(log10_h))
 
+            if include_psr_term:
+                log10_mc = np.copy(samples[j,i,par_names.index(str(remove_index)+'_log10_mc')])
+                p_phases = []
+                p_dists = []
+                for psr_name in ptas[0][0][0].pulsars:
+                    p_phases.append(samples[j,i,par_names.index(psr_name+'_'+'cw'+str(remove_index)+'_p_phase')])
+                    p_dists.append(samples[j,i,par_names.index(psr_name+'_'+'cw'+str(remove_index)+'_p_dist')])
+
+                prior_ext *= ptas[1][0][0].params[ptas[1][0][0].param_names.index('0_log10_mc')].get_pdf(log10_mc)
+                for psr_idx, psr_name in enumerate(ptas[0][0][0].pulsars):
+                    prior_ext *= ptas[1][0][0].params[ptas[1][0][0].param_names.index(psr_name+'_'+'cw0_p_dist')].get_pdf(p_dists[psr_idx])
+                    prior_ext *= ptas[1][0][0].params[ptas[1][0][0].param_names.index(psr_name+'_'+'cw0_p_phase')].get_pdf(p_phases[psr_idx])
+
             acc_ratio = np.exp(log_acc_ratio)*fe_old_point_normalized*prior_ext
             #correction close to edge based on eqs. (40) and (41) of Sambridge et al. Geophys J. Int. (2006) 167, 528-542
             if n_source==1:
@@ -1098,7 +1162,7 @@ def do_rj_move(n_chain, max_n_source, n_source_prior, ptas, samples, i, betas, a
 #GLOBAL PROPOSAL BASED ON FE-STATISTIC
 #
 ################################################################################
-def do_fe_global_jump(n_chain, max_n_source, ptas, samples, i, betas, a_yes, a_no, freqs, fe, inc_max, psi_max, phase0_max, h_max, Fe_pdet, Fe_alpha, psi_pdf, cos_inc_pdf, phase0_pdf, log_h_pdf, par_names, par_names_crn, par_names_gwb, log_likelihood):
+def do_fe_global_jump(n_chain, max_n_source, ptas, samples, i, betas, a_yes, a_no, freqs, fe, inc_max, psi_max, phase0_max, h_max, Fe_pdet, Fe_alpha, psi_pdf, cos_inc_pdf, phase0_pdf, log_h_pdf, par_names, par_names_crn, par_names_gwb, include_psr_term, log_likelihood):
     #print("Fe")
        
     #set probability of deterministic vs flat proposal in extrinsic parameters
@@ -1157,6 +1221,20 @@ def do_fe_global_jump(n_chain, max_n_source, ptas, samples, i, betas, a_yes, a_n
             phase0 = np.random.uniform(low=0.0, high=2*np.pi)
             log10_h = ptas[1][0][0].params[ptas[1][0][0].param_names.index('0_log10_h')].sample()
 
+        #randomize pulsar term parameters as well if included
+        if include_psr_term:
+            log10_mc = ptas[1][0][0].params[ptas[1][0][0].param_names.index('0_log10_mc')].sample()
+            p_phases = []
+            for psr_name in ptas[0][0][0].pulsars:
+                p_phases.append(np.random.uniform(low=0.0, high=2*np.pi))
+            p_dists = []
+            if n_source>1:
+                for psr_name in ptas[0][0][0].pulsars:
+                    p_dists.append(samples[j,i,par_names.index(psr_name+'_'+'cw0_p_dist')])
+            else:
+                for psr_name in ptas[0][0][0].pulsars:
+                    p_dists.append(ptas[1][0][0].params[ptas[1][0][0].param_names.index(psr_name+'_'+'cw0_p_dist')].sample())
+
         #choose randomly which source to change
         source_select = np.random.randint(n_source)
         samples_current = np.copy(samples[j,i,:])
@@ -1169,12 +1247,20 @@ def do_fe_global_jump(n_chain, max_n_source, ptas, samples, i, betas, a_yes, a_n
         new_point[par_names.index(str(source_select)+'_log10_h')] = log10_h
         new_point[par_names.index(str(source_select)+'_phase0')] = phase0
         new_point[par_names.index(str(source_select)+'_psi')] = psi
+        if include_psr_term:
+            new_point[par_names.index(str(source_select)+'_log10_mc')] = log10_mc
+            for psr_idx, psr_name in enumerate(ptas[0][0][0].pulsars):
+                new_point[par_names.index(psr_name + '_cw' + str(source_select) + '_p_phase')] = p_phases[psr_idx]
+                new_point[par_names.index(psr_name + '_cw' + str(source_select) + '_p_dist')] = p_dists[psr_idx]
 
         if fe_new_point>fe_limit:
             fe_new_point=fe_limit        
         
         new_point_dict = dict_samples(new_point,par_names,ptas[n_source][gwb_on][rn_on])
         samples_current_dict = dict_samples(samples_current,par_names,ptas[n_source][gwb_on][rn_on])
+        #if j==0:
+        #    print(samples_current_dict)
+        #    print(new_point_dict)
 
         log_L = ptas[n_source][gwb_on][rn_on].get_lnlikelihood(new_point_dict)
         log_acc_ratio = log_L*betas[j,i]
@@ -1274,7 +1360,7 @@ def do_fe_global_jump(n_chain, max_n_source, ptas, samples, i, betas, a_yes, a_n
 #REGULAR MCMC JUMP ROUTINE (JUMPING ALONG EIGENDIRECTIONS IN CW, GWB AND RN PARAMETERS)
 #
 ################################################################################
-def regular_jump(n_chain, ptas, samples, i, betas, a_yes, a_no, eig, eig_gwb_rn, par_names, par_names_cws, par_names_crn, par_names_gwb, log_likelihood):
+def regular_jump(n_chain, ptas, samples, i, betas, a_yes, a_no, eig, eig_gwb_rn, par_names, par_names_cws, par_names_crn, par_names_gwb, include_psr_term, log_likelihood):
     #print("FISHER")
     for j in range(n_chain):
         n_source = get_n_source(samples,j,i)
@@ -1307,11 +1393,20 @@ def regular_jump(n_chain, ptas, samples, i, betas, a_yes, a_no, eig, eig_gwb_rn,
         
         if what_to_vary == 'CW':
             source_select = np.random.randint(n_source)
-            jump_select = np.random.randint(7)
+            jump_select = np.random.randint(len(par_names_cws[0]))
             jump_1source = eig[j,source_select,jump_select,:]
             jump = np.zeros(len(par_names))
             for par_name in par_names_cws[source_select]:
                 jump[par_names.index(par_name)] = jump_1source[par_names_cws[source_select].index(par_name)]
+            #make sure we change the pulsar distances to all sources when psr terms are on (kludge)
+            if include_psr_term:
+                for n in range(n_source):
+                    if n!=source_select:
+                        for psr_name in ptas[0][0][0].pulsars:
+                            jump[par_names.index(psr_name+'_'+'cw'+str(n)+'_p_dist')] = np.copy(jump[par_names.index(psr_name+'_'+'cw'+str(source_select)+'_p_dist')])
+            #if j==0:
+            #    print(n_source)
+            #    print(jump)
         elif what_to_vary == 'GWB':
             jump_select = np.random.randint(len(par_names_crn+par_names_gwb))
             jump_gwb = eig_gwb_rn[j,jump_select,:]
@@ -1906,7 +2001,10 @@ def get_ptas(pulsars, vary_white_noise=True, include_equad_ecorr=False, wn_backe
     cws = []
     for i in range(max_n_source):
         log10_fgw = parameter.Uniform(np.log10(cw_f_range[0]), np.log10(cw_f_range[1]))(str(i)+'_'+'log10_fgw')
-        log10_mc = parameter.Constant(np.log10(5e9))(str(i)+'_'+'log10_mc')
+        if include_psr_term:
+            log10_mc = parameter.Uniform(7, 10)(str(i)+'_'+'log10_mc')
+        else:
+            log10_mc = parameter.Constant(np.log10(5e9))(str(i)+'_'+'log10_mc')
         cos_gwtheta = parameter.Uniform(-1, 1)(str(i)+'_'+'cos_gwtheta')
         gwphi = parameter.Uniform(0, 2*np.pi)(str(i)+'_'+'gwphi')
         phase0 = parameter.Uniform(0, 2*np.pi)(str(i)+'_'+'phase0')
@@ -1918,10 +2016,20 @@ def get_ptas(pulsars, vary_white_noise=True, include_equad_ecorr=False, wn_backe
             log10_h = parameter.LinearExp(cw_log_amp_range[0], cw_log_amp_range[1])(str(i)+'_'+'log10_h')
         else:
             print("CW amplitude prior of {0} not available".format(cw_amp_prior))
-        cw_wf = deterministic.cw_delay(cos_gwtheta=cos_gwtheta, gwphi=gwphi, log10_mc=log10_mc,
-                     log10_h=log10_h, log10_fgw=log10_fgw, phase0=phase0,
-                     psi=psi, cos_inc=cos_inc, tref=53000*86400)
-        cws.append(deterministic.CWSignal(cw_wf, psrTerm=include_psr_term, name='cw'+str(i)))
+
+        if include_psr_term:
+            p_phase = parameter.Uniform(0, 2*np.pi)
+            p_dist = parameter.Normal(0, 1)
+            cw_wf = deterministic.cw_delay(cos_gwtheta=cos_gwtheta, gwphi=gwphi, log10_mc=log10_mc,
+                                           log10_h=log10_h, log10_fgw=log10_fgw, phase0=phase0, psrTerm=True,
+                                           p_phase=p_phase, p_dist=p_dist, evolve=True,
+                                           psi=psi, cos_inc=cos_inc, tref=53000*86400)
+            cws.append(deterministic.CWSignal(cw_wf, psrTerm=True, name='cw'+str(i)))
+        else:
+            cw_wf = deterministic.cw_delay(cos_gwtheta=cos_gwtheta, gwphi=gwphi, log10_mc=log10_mc,
+                                           log10_h=log10_h, log10_fgw=log10_fgw, phase0=phase0, psrTerm=False,
+                                           psi=psi, cos_inc=cos_inc, tref=53000*86400)
+            cws.append(deterministic.CWSignal(cw_wf, psrTerm=False, name='cw'+str(i)))
     
     gwb_options = [False,]
     if include_gwb:
