@@ -178,7 +178,7 @@ def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, n_source_prior='flat'
     if include_gwb and include_rn and rn_gwb_on_prior is None:
         rn_gwb_on_prior = np.array([[(1-rn_on_prior)*(1-gwb_on_prior), rn_on_prior*(1-gwb_on_prior)],
                                     [(1-rn_on_prior)*gwb_on_prior, rn_on_prior*gwb_on_prior]])
-    else:
+    elif include_gwb and include_rn:
         rn_gwb_on_prior = np.array(rn_gwb_on_prior)
         rn_gwb_on_prior = rn_gwb_on_prior/np.sum(rn_gwb_on_prior)
 
@@ -491,9 +491,9 @@ Fe-proposals: {1:.2f}%\nJumps along Fisher eigendirections: {2:.2f}%\nNoise jump
 
                 #only update Fisher matrix if everything that should be in the model is currently on
                 everything_on = True
-                if include_gwb and gwb_on==0:
+                if gwb_on==0:
                     everything_on = False
-                if vary_rn and rn_on==0:
+                if rn_on==0:
                     everything_on = False
 
                 if everything_on:
