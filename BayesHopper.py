@@ -290,7 +290,10 @@ def run_ptmcmc(N, T_max, n_chain, pulsars, max_n_source=1, n_source_prior='flat'
 
     #setting up array for the fisher eigenvalues
     #one for cw parameters which we will keep updating
-    eig = np.ones((n_chain, max_n_source, len(par_names_cws[0]), len(par_names_cws[0])))*0.1
+    if max_n_source>0:
+        eig = np.ones((n_chain, max_n_source, len(par_names_cws[0]), len(par_names_cws[0])))*0.1
+    else: #initiate eig even if running in no CW mode to avoid errors down the line
+        eig = None
     
     #one for GWB and common rn parameters, which we will keep updating
     if include_gwb:
